@@ -3,7 +3,8 @@
 Alternative Mastodon UI.  Very much in progress.
 
 Current status:
-* Displays posts
+* Displays posts: https://www.jefftk.com/shrubgrazer/post/[id]
+* Displays a bare feed for listed users: https://www.jefftk.com/shrubgrazer/
 
 Goals:
 * Algorithmic feed: https://www.jefftk.com/p/user-controlled-algorithmic-feeds
@@ -23,10 +24,38 @@ Algorithmic feed plan:
 * When viewing a given post's tree, unviewed items are marked in the left margin
 
 Next steps:
-* OAuth and signup
 * SQLite for storing users, priorities, and views
 * Unprioritized feed
 * Voting
 * Control panel
 * View tracking
 * Prioritized feed
+
+
+## Installation
+
+```
+nginx.conf:
+  location /shrubgrazer {
+    include uwsgi_params;
+    uwsgi_pass 127.0.0.1:7096;
+    add_header Cache-Control "private;max-age=0";
+  }
+
+/etc/systemd/system/uwsgi-shrubgrazer.service:
+  [Unit]
+  Description=uWSGI shrubgrazer
+
+  [Service]
+  ExecStart=/usr/bin/uwsgi_python3 --socket :7096 --wsgi-file /home/jefftk/code/shrubgrazer/shrubgrazer.py
+  Restart=always
+  KillSignal=SIGQUIT
+  Type=notify
+  NotifyAccess=all
+
+  [Install]
+  WantedBy=multi-user.target
+
+$ sudo systemctl enable uwsgi-shrubgrazer
+$ sudo systemctl daemon-reload
+```

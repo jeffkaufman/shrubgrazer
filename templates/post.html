@@ -1,0 +1,27 @@
+<html>
+  <meta charset="utf-8">
+  <title>Shrubgrazer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  $raw_css
+  $raw_ancestors
+  $raw_post
+  <script>
+    function collapse_expand(e) {
+      e.stopPropagation();
+
+      let el = e.target;
+      if (el.tagName == "A") return;
+
+      while (!el.classList.contains('post')) {
+        console.log("considering", el);
+        el = el.parentElement;
+      }
+
+      console.log("toggling", el);
+      el.classList.toggle('collapsed');
+    }
+    for (let post of document.getElementsByClassName("post")) {
+      post.onclick = collapse_expand;
+    }
+  </script>
+</html>
