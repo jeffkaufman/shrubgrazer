@@ -13,6 +13,39 @@ import http.cookies
 
 script_dir = os.path.dirname(__file__)
 
+class Entry:
+  def __init__(self, entry_json):
+    self.display_name = entry_json['account']['display_name']
+    self.acct = entry_json['account']['acct']
+
+    if not self.display_name:
+      self.display_name = self.acct
+      self.acct = ""
+
+    self.view_url = entry_json["id"]
+    self.external_url = entry_json["url"]
+    self.flavor = 'standard'
+    self.ts = entry_json['created_at'].split("T")[0]
+    self.raw_body = entry_json['content']
+    self.children=[]
+
+    if 'reblog' in entry_json and entry_json['reblog']:
+      child = Entry(entry_json['reblog'])
+      child.flavor = 'reblog'
+      self.flavor = 'boost'
+      self.children.append(child)
+
+  def render(self, depth=0):
+    subs = dict(
+      (k, getattr(self, k))
+      for k in dir(self)
+      if not k.startswith('__'))
+
+    subs['parity'] = str(depth % 2)
+    subs['raw_children'] = [
+      child.render(depth+1) for child in self.children]
+    return template("partial_post", subs)
+
 def fetch(domain, path, access_token=None):
   headers = {}
   if access_token:
@@ -31,46 +64,19 @@ def template(template_name, subs={}, **kwargs):
   safe_subs = {}
   for k, v in {**subs, **kwargs}.items():
     if type(v) == type([]):
-      v = "\n".join(v)
+      v = "\n".join([x for x in v if type(x) == type("")])
 
     if v is None:
       v = ''
+
+    if type(v) != type(""):
+      continue
 
     if not k.startswith("raw_"):
       v = html.escape(v)
     safe_subs[k] = v
 
   return TEMPLATES[template_name].substitute(safe_subs)
-
-def render_child_tree(node, depth=0):
-  node['parity'] = str(depth % 2)
-  node['raw_children'] = [render_child_tree(child, depth+1)
-                          for child in node['children']]
-  del node['children']
-  return template("partial_post", subs=node)
-
-def make_post_dict(s):
-  display_name=s['account']['display_name']
-  acct=s['account']['acct']
-
-  if not display_name:
-    display_name = acct
-    acct = ""
-
-  d = dict(
-    view_url=s["id"],
-    external_url=s["url"],
-    display_name=display_name,
-    acct=acct,
-    flavor='standard',
-    ts=s['created_at'].split("T")[0],
-    raw_body=s['content'],
-    children=[])
-
-  if 'reblog' in s and s['reblog']:
-    d['children'] = [make_post_dict(s['reblog'])]
-
-  return d
 
 def post(post_id, cookies):
   if not re.match('^[0-9]+$', post_id):
@@ -86,25 +92,23 @@ def post(post_id, cookies):
   context = fetch(domain, "api/v1/statuses/%s/context" % post_id, access_token)
 
   rendered_ancestors = [
-    render_child_tree(make_post_dict(ancestor))
+    Entry(ancestor).render()
     for ancestor in context["ancestors"]]
 
-  root = make_post_dict(body)
-  root['flavor'] = 'root'
+  root = Entry(body)
+  root.flavor = 'root'
   children_by_id = {post_id: root}
 
-  for child in context["descendants"]:
-    child_dict = make_post_dict(child)
+  for child_json in context["descendants"]:
+    child = Entry(child_json)
 
-    children_by_id[child["id"]] = child_dict
-    children_by_id[child["in_reply_to_id"]]['children'].append(child_dict)
-
-  rendered_post_and_children = render_child_tree(root)
+    children_by_id[child["id"]] = child
+    children_by_id[child["in_reply_to_id"]].children.append(child)
 
   subs = {
     'raw_css': template('css'),
     'raw_ancestors': rendered_ancestors,
-    'raw_post': rendered_post_and_children,
+    'raw_post': root.render(),
   }
 
   return template("post", subs)
@@ -116,9 +120,10 @@ def feed(access_token, acct):
 
   entries = fetch(domain, "api/v1/timelines/home", access_token)
 
-  rendered_entries = []
-  for entry in entries:
-    rendered_entries.append(render_child_tree(make_post_dict(entry)))
+  rendered_entries = [
+    Entry(entry).render()
+    for entry in entries
+  ]
 
   subs = {
     'raw_css': template('css'),
