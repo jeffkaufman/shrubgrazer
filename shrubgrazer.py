@@ -49,6 +49,9 @@ class Card:
     elif hasall(self.json, 'url', 'title', 'description'):
       t = "partial_link_card"
 
+    else:
+      return None
+
     return template(t, self.json)
 
 class Entry:
