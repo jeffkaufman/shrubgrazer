@@ -31,7 +31,6 @@ Next steps:
 * View tracking
 * Prioritized feed
 
-
 ## Installation
 
 ```

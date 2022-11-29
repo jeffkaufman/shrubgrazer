@@ -232,12 +232,8 @@ def delete_cookie(cookie):
     "set-cookie",
     "%s=deleted; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % cookie)
 
-def auth(cookies, environ):
-  host = environ['HTTP_HOST']
-  path = environ["PATH_INFO"]
-
-  redirect_path = re.sub("/auth$", "/auth2", path)
-  redirect_url = "https://%s%s" % (host, redirect_path)
+def auth(cookies, environ, website):
+  redirect_url = "https://%sauth2" % website
 
   request_body_size = int(environ.get('CONTENT_LENGTH', 0) or 0)
   form_vals = urllib.parse.parse_qs(
@@ -271,7 +267,7 @@ def auth(cookies, environ):
                domain, client_config["client_id"], redirect_url)),
     set_cookie("shrubgrazer-acct", acct))
 
-def auth2(cookies, environ):
+def auth2(cookies, environ, website):
   acct = cookies['shrubgrazer-acct'].value
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
@@ -292,11 +288,8 @@ def auth2(cookies, environ):
 
   access_token = json.loads(resp)['access_token']
 
-  host = environ['HTTP_HOST']
-  path = environ["PATH_INFO"]
-  redirect_url = "https://%s%s" % (host, re.sub("/auth2$", "/", path))
 
-  return Response(redirect(redirect_url),
+  return Response(redirect(website),
                   set_cookie('shrubgrazer-access-token', access_token))
 
 def removeprefix(s, prefix):
@@ -315,30 +308,27 @@ def logout(website):
                                  'shrubgrazer-acct'))
 
 def start(environ, start_response):
-  path = environ["PATH_INFO"]
-  path = removeprefix(path, "/")
-  path = removeprefix(path, "shrubgrazer/")
-
-  website="https://www.jefftk.com/shrubgrazer/"
-
-  pieces = path.split("/")
   cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
+  path = environ["PATH_INFO"]
 
-  if len(pieces) == 1 and not pieces[0]:
+  if re.match(".*/post/[0-9]*$", path):
+    website, _, post_id, = path.rsplit("/", 2)
+    return post(post_id, cookies, website=website + "/")
+
+  website, page = path.rsplit("/", 1)
+  website = website + "/"
+
+  if not page:
     return home(cookies, website)
 
-  if len(pieces) == 1 and pieces[0] == "logout":
+  if page == "logout":
     return logout(website)
 
-  if len(pieces) == 1 and pieces[0] == "auth":
-    return auth(cookies, environ)
+  if page == "auth":
+    return auth(cookies, environ, website)
 
-  if len(pieces) == 1 and pieces[0] == "auth2":
-    return auth2(cookies, environ)
-
-  if len(pieces) == 2 and pieces[0] == "post":
-    _, post_id = pieces
-    return post(post_id, cookies, website=website)
+  if page == "auth2":
+    return auth2(cookies, environ, website)
 
   return Response("unknown url\n")
 
