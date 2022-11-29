@@ -60,6 +60,9 @@ class Entry:
       self.display_name = self.acct
       self.acct = ""
 
+    # remove unrecognized emoji colon codes
+    self.display_name = re.sub(":.*:", "", self.display_name)
+
     self.view_url = entry_json["id"]
     self.external_url = entry_json["url"]
     self.flavor = 'standard'
@@ -186,7 +189,6 @@ def feed(access_token, acct, website):
     'raw_css': template('css'),
     'raw_header': template('partial_header', website=website),
     'raw_entries': rendered_entries,
-    'raw_toggle_script': template('toggle_script'),
   }
 
   return Response(template("feed", subs))
