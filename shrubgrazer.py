@@ -13,6 +13,39 @@ import http.cookies
 
 script_dir = os.path.dirname(__file__)
 
+def hasall(d, *vals):
+  for val in vals:
+    if not d.get(val, None):
+      return False
+  return True
+
+class Card:
+  def __init__(self, card_json):
+
+    if card_json and "{{ngMeta.description}}" in card_json.values():
+      with open("%s/details2.txt" % script_dir, "w") as outf:
+        outf.write(json.dumps(card_json))
+
+    self.json = card_json
+
+  def render(self):
+    if not self.json:
+      return None
+
+    if hasall(self.json, 'image'):
+      if 'description' not in self.json:
+        self.json['description'] = ''
+
+      if 'url' in self.json:
+        t = "partial_image_link_card"
+      else:
+        t = "partial_image_card"
+
+    elif hasall(self.json, 'url', 'title', 'description'):
+      t = "partial_link_card"
+
+    return template(t, self.json)
+
 class Entry:
   def __init__(self, entry_json):
     self.display_name = entry_json['account']['display_name']
@@ -28,14 +61,17 @@ class Entry:
     self.ts = entry_json['created_at'].split("T")[0]
     self.raw_body = entry_json['content']
     self.children=[]
+    self.card =  Card(entry_json.get('card', None))
+    self.raw_boost_icon = ""
 
-    if 'reblog' in entry_json and entry_json['reblog']:
+    if hasall(entry_json, 'reblog'):
       child = Entry(entry_json['reblog'])
       child.flavor = 'reblog'
       self.flavor = 'boost'
+      self.raw_boost_icon = "<b>&#8593;</b>" # up arrow
       self.children.append(child)
 
-  def render(self, depth=0):
+  def render(self, depth=0, url_prefix=""):
     subs = dict(
       (k, getattr(self, k))
       for k in dir(self)
@@ -43,7 +79,12 @@ class Entry:
 
     subs['parity'] = str(depth % 2)
     subs['raw_children'] = [
-      child.render(depth+1) for child in self.children]
+      child.render(depth=depth+1, url_prefix=url_prefix)
+      for child in self.children]
+
+    subs['raw_card'] = self.card.render() if self.card else ''
+    subs['view_url'] = url_prefix + subs['view_url']
+
     return template("partial_post", subs)
 
 def fetch(domain, path, access_token=None):
@@ -69,6 +110,9 @@ def template(template_name, subs={}, **kwargs):
     if v is None:
       v = ''
 
+    if type(v) == type(1):
+      v = str(v)
+
     if type(v) != type(""):
       continue
 
@@ -76,9 +120,15 @@ def template(template_name, subs={}, **kwargs):
       v = html.escape(v)
     safe_subs[k] = v
 
-  return TEMPLATES[template_name].substitute(safe_subs)
+  try:
+    return TEMPLATES[template_name].substitute(safe_subs)
+  except Exception:
+    with open("%s/details.txt" % script_dir, "w") as outf:
+      outf.write(json.dumps(safe_subs))
+    raise
 
-def post(post_id, cookies):
+
+def post(post_id, cookies, website):
   if not re.match('^[0-9]+$', post_id):
     return "invalid post id\n"
 
@@ -102,18 +152,19 @@ def post(post_id, cookies):
   for child_json in context["descendants"]:
     child = Entry(child_json)
 
-    children_by_id[child["id"]] = child
-    children_by_id[child["in_reply_to_id"]].children.append(child)
+    children_by_id[child_json["id"]] = child
+    children_by_id[child_json["in_reply_to_id"]].children.append(child)
 
   subs = {
     'raw_css': template('css'),
+    'raw_header': template('partial_header', website=website),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
   }
 
   return template("post", subs)
 
-def feed(access_token, acct):
+def feed(access_token, acct, website):
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
@@ -121,12 +172,13 @@ def feed(access_token, acct):
   entries = fetch(domain, "api/v1/timelines/home", access_token)
 
   rendered_entries = [
-    Entry(entry).render()
+    Entry(entry).render(url_prefix="post/")
     for entry in entries
   ]
 
   subs = {
     'raw_css': template('css'),
+    'raw_header': template('partial_header', website=website),
     'raw_entries': rendered_entries
   }
 
@@ -136,7 +188,8 @@ def home(cookies):
   if 'shrubgrazer-access-token' not in cookies:
     return template("welcome")
   return feed(cookies['shrubgrazer-access-token'].value,
-              cookies['shrubgrazer-acct'].value)
+              cookies['shrubgrazer-acct'].value,
+              website="https://www.jefftk.com/shrubgrazer/")
 
 def create_client(domain, redirect_url):
   website = re.sub("/auth2$", "/", redirect_url)
@@ -153,9 +206,17 @@ def client_config_fname(domain):
   return "%s/%s.client-config.json" % (script_dir, domain)
 
 def set_cookie(k, v):
-  return {"set-cookie":
-          "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
-            k, v, 365*24*60*60)}
+  return [("set-cookie",
+           "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
+            k, v, 365*24*60*60))]
+
+def delete_cookies(*cookies):
+  return [delete_cookie(cookie) for cookie in cookies]
+
+def delete_cookie(cookie):
+  return (
+    "set-cookie",
+    "%s=deleted; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % cookie)
 
 def auth(cookies, environ):
   host = environ['HTTP_HOST']
@@ -234,16 +295,26 @@ def removesuffix(s, suffix):
     return s[:-len(suffix)]
   return s
 
+def logout(website):
+  return [redirect(website),
+          delete_cookies('shrubgrazer-access-token',
+                         'shrubgrazer-acct')]
+
 def start(environ, start_response):
   path = environ["PATH_INFO"]
   path = removeprefix(path, "/")
   path = removeprefix(path, "shrubgrazer/")
+
+  website="https://www.jefftk.com/shrubgrazer/"
 
   pieces = path.split("/")
   cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
 
   if len(pieces) == 1 and not pieces[0]:
     return home(cookies)
+
+  if len(pieces) == 1 and pieces[0] == "logout":
+    return logout(website)
 
   if len(pieces) == 1 and pieces[0] == "auth":
     return auth(cookies, environ)
@@ -253,7 +324,7 @@ def start(environ, start_response):
 
   if len(pieces) == 2 and pieces[0] == "post":
     _, post_id = pieces
-    return post(post_id, cookies)
+    return post(post_id, cookies, website=website)
 
   return "unknown url\n"
 
@@ -265,16 +336,16 @@ def die500(start_response, e):
 def application(environ, start_response):
   try:
     output = start(environ, start_response)
-    new_headers = {}
+    additional_headers = []
 
     if type(output) == type([]):
-      output, new_headers = output
+      output, additional_headers = output
 
     if output is None:
       output = ''
 
     headers = [('content-type', 'text/html')]
-    for k, v in new_headers.items():
+    for k, v in additional_headers:
       headers.append((k, v))
 
     start_response('200 OK', headers)
