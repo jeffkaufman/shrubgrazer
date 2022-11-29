@@ -1,0 +1,19 @@
+<script>
+function collapse_expand(e) {
+  e.stopPropagation();
+
+  let el = e.target;
+
+  while (!el.classList.contains('post')) {
+    if (el.tagName == "A") return;
+    console.log("considering", el);
+    el = el.parentElement;
+  }
+
+  console.log("toggling", el);
+  el.classList.toggle('collapsed');
+}
+for (let post of document.getElementsByClassName("post")) {
+  post.onclick = collapse_expand;
+}
+</script>
