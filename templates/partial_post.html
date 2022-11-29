@@ -1,10 +1,18 @@
 <div class="post parity-$parity flavor-$flavor">
   <div class="post_meta">
-    $raw_boost_icon
-    <span class=display_name>$display_name</span>
-    <span class=acct>$acct</span>
-    <a href="$view_url" class=ts>$ts</a>
-    <a href="$external_url" class=external_url>&#x2197;</a>
+    <table>
+    <tr><td>
+      $raw_boost_icon
+      <span class=display_name>$display_name</span>
+      <span class=acct>$acct</span>
+    </td>
+    <td align=right>
+      <span>
+        <a href="$view_url" class=ts>$raw_ts</a>
+        <a href="$external_url" class=external_url>&#x2197;</a>
+      </span>
+    </td>
+    </table>
   </div>
   <div class=post_body>
     $raw_body

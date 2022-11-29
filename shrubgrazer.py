@@ -63,7 +63,7 @@ class Entry:
     self.view_url = entry_json["id"]
     self.external_url = entry_json["url"]
     self.flavor = 'standard'
-    self.ts = entry_json['created_at'].split("T")[0]
+    self.raw_ts = entry_json['created_at'].split("T")[0]
     self.raw_body = entry_json['content']
     self.children=[]
     self.card =  Card(entry_json.get('card', None))
