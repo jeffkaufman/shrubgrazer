@@ -2,9 +2,10 @@
   <meta charset="utf-8">
   <title>Shrubgrazer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <h1>Shrubgrazer</h1>
-
+  $raw_css
+  <div id=content>
+  $raw_header
+  <div id=welcome>
 Welcome to Shrubgrazer, an <a
 href="https://github.com/jeffkaufman/shrubgrazer">open source</a> UI
 for Mastodon.
@@ -17,8 +18,11 @@ Before you can use it, you need to authorize it.  Please enter your full usernam
 
 <form action=auth method=post>
 <input id=acct name=acct placeholder="@you@example.com"
-       size=50 value="@jefftk@mastodon.mit.edu">
+       size=35 value="@jefftk@mastodon.mit.edu">
 <input type="submit" value="Submit" onclick=saveacct>
 </form>
+
+  </div>
+  </div>
 
 </html>

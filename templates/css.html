@@ -8,6 +8,8 @@
     padding-top: 0.25em;
     padding-bottom: 0.25em;
     margin-bottom: 0.25em;
+    border-top-left-radius: 0.125em;
+    border-bottom-left-radius: 0.125em;
   }
   .post:last-child {
     margin-bottom: 0;
@@ -42,10 +44,17 @@
     font-weight-bold;
     text-decoration: none;
   }
-  link-card, image-card {
+  .link-card {
     border: 1px solid #555;
-    border-radius: 0.25em;
+    border-radius: 0.125em;
     padding: 0.5em;
+    margin: 0.5em;
+  }
+  .link-card-description {
+    display: block;
+    font-style: italic;
+    text-decoration: none;
+    color: inherit;
   }
   img {
     max-width: 100%;
@@ -53,6 +62,8 @@
   #content {
     max-width: 100%;
     overflow: hidden;
+    min-height: 100vh;
+    background: #f5f5f5;
   }
   @media screen and (min-width: 45em) {
     #content {
@@ -61,10 +72,17 @@
       margin-right: auto;
     }
   }
+  #welcome {
+    padding: 1em;
+  }
+  #entries {
+    background: #fff;
+  }
   #header {
     background-color: black;
     font-weight: bold;
     font-size: 200%;
+    position: relative;
   }
   #header > a {
     text-decoration: none;

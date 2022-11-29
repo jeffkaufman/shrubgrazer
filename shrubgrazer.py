@@ -19,6 +19,11 @@ def hasall(d, *vals):
       return False
   return True
 
+class Response:
+  def __init__(self, output="", headers=[]):
+    self.output = output
+    self.headers = headers
+
 class Card:
   def __init__(self, card_json):
 
@@ -160,9 +165,10 @@ def post(post_id, cookies, website):
     'raw_header': template('partial_header', website=website),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
+    'raw_toggle_script': template('toggle_script'),
   }
 
-  return template("post", subs)
+  return Response(template("post", subs))
 
 def feed(access_token, acct, website):
   _, username, domain = acct.split("@")
@@ -179,17 +185,22 @@ def feed(access_token, acct, website):
   subs = {
     'raw_css': template('css'),
     'raw_header': template('partial_header', website=website),
-    'raw_entries': rendered_entries
+    'raw_entries': rendered_entries,
+    'raw_toggle_script': template('toggle_script'),
   }
 
-  return template("feed", subs)
+  return Response(template("feed", subs))
 
-def home(cookies):
+def home(cookies, website):
   if 'shrubgrazer-access-token' not in cookies:
-    return template("welcome")
+    subs = {
+      'raw_css': template('css'),
+      'raw_header': template('partial_header', website=website),
+    }
+    return Response(template("welcome", subs))
   return feed(cookies['shrubgrazer-access-token'].value,
               cookies['shrubgrazer-acct'].value,
-              website="https://www.jefftk.com/shrubgrazer/")
+              website=website)
 
 def create_client(domain, redirect_url):
   website = re.sub("/auth2$", "/", redirect_url)
@@ -206,9 +217,10 @@ def client_config_fname(domain):
   return "%s/%s.client-config.json" % (script_dir, domain)
 
 def set_cookie(k, v):
-  return [("set-cookie",
-           "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
-            k, v, 365*24*60*60))]
+  return [
+    ("set-cookie",
+     "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
+       k, v, 365*24*60*60))]
 
 def delete_cookies(*cookies):
   return [delete_cookie(cookie) for cookie in cookies]
@@ -251,11 +263,11 @@ def auth(cookies, environ):
   with open(client_config_fname(domain)) as inf:
     client_config = json.load(inf)
 
-  return [
+  return Response(
     redirect("https://%s/oauth/authorize?"
              "client_id=%s&scope=read&redirect_uri=%s&response_type=code" % (
                domain, client_config["client_id"], redirect_url)),
-    set_cookie("shrubgrazer-acct", acct)]
+    set_cookie("shrubgrazer-acct", acct))
 
 def auth2(cookies, environ):
   acct = cookies['shrubgrazer-acct'].value
@@ -282,8 +294,8 @@ def auth2(cookies, environ):
   path = environ["PATH_INFO"]
   redirect_url = "https://%s%s" % (host, re.sub("/auth2$", "/", path))
 
-  return [redirect(redirect_url),
-          set_cookie('shrubgrazer-access-token', access_token)]
+  return Response(redirect(redirect_url),
+                  set_cookie('shrubgrazer-access-token', access_token))
 
 def removeprefix(s, prefix):
   if s.startswith(prefix):
@@ -296,9 +308,9 @@ def removesuffix(s, suffix):
   return s
 
 def logout(website):
-  return [redirect(website),
-          delete_cookies('shrubgrazer-access-token',
-                         'shrubgrazer-acct')]
+  return Response(redirect(website),
+                  delete_cookies('shrubgrazer-access-token',
+                                 'shrubgrazer-acct'))
 
 def start(environ, start_response):
   path = environ["PATH_INFO"]
@@ -311,7 +323,7 @@ def start(environ, start_response):
   cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
 
   if len(pieces) == 1 and not pieces[0]:
-    return home(cookies)
+    return home(cookies, website)
 
   if len(pieces) == 1 and pieces[0] == "logout":
     return logout(website)
@@ -326,7 +338,7 @@ def start(environ, start_response):
     _, post_id = pieces
     return post(post_id, cookies, website=website)
 
-  return "unknown url\n"
+  return Response("unknown url\n")
 
 def die500(start_response, e):
   trb = "%s: %s\n\n%s" % (e.__class__.__name__, e, traceback.format_exc())
@@ -335,19 +347,10 @@ def die500(start_response, e):
 
 def application(environ, start_response):
   try:
-    output = start(environ, start_response)
-    additional_headers = []
-
-    if type(output) == type([]):
-      output, additional_headers = output
-
-    if output is None:
-      output = ''
-
-    headers = [('content-type', 'text/html')]
-    for k, v in additional_headers:
-      headers.append((k, v))
-
+    response = start(environ, start_response)
+    output = response.output
+    headers = response.headers
+    headers.append(('content-type', 'text/html'))
     start_response('200 OK', headers)
   except Exception as e:
     output = die500(start_response, e)

@@ -8,23 +8,5 @@
   $raw_ancestors
   $raw_post
   </div>
-  <script>
-    function collapse_expand(e) {
-      e.stopPropagation();
-
-      let el = e.target;
-      if (el.tagName == "A") return;
-
-      while (!el.classList.contains('post')) {
-        console.log("considering", el);
-        el = el.parentElement;
-      }
-
-      console.log("toggling", el);
-      el.classList.toggle('collapsed');
-    }
-    for (let post of document.getElementsByClassName("post")) {
-      post.onclick = collapse_expand;
-    }
-  </script>
+  $raw_toggle_script
 </html>
