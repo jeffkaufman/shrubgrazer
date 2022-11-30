@@ -241,6 +241,10 @@ def feed(access_token, acct, csrf_token, website):
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
+  cur, con = get_cursor()
+  cur.execute("select post_id from views where acct=?", (acct, ))
+  viewed_post_ids = set(x[0] for x in cur.fetchall())
+
   max_id_arg = ""
 
   entries = []
@@ -249,9 +253,11 @@ def feed(access_token, acct, csrf_token, website):
                          access_token))
     max_id_arg = "&max_id=%s" % entries[-1]["id"]
 
+  entries = [Entry(entry) for entry in entries]
   rendered_entries = [
-    Entry(entry).render(url_prefix="post/")
+    entry.render(url_prefix="post/")
     for entry in entries
+    if int(entry.post_id) not in viewed_post_ids
   ]
 
   subs = {
