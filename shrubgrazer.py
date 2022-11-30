@@ -56,6 +56,10 @@ class Card:
 
 class Entry:
   def __init__(self, entry_json):
+    while hasall(entry_json, 'reblog') and not hasall(entry_json, 'content'):
+      entry_json = entry_json['reblog']
+
+
     self.display_name = entry_json['account']['display_name']
     self.acct = entry_json['account']['acct']
 
@@ -73,13 +77,11 @@ class Entry:
     self.raw_body = entry_json['content']
     self.children=[]
     self.card =  Card(entry_json.get('card', None))
-    self.raw_boost_icon = ""
 
     if hasall(entry_json, 'reblog'):
       child = Entry(entry_json['reblog'])
       child.flavor = 'reblog'
       self.flavor = 'boost'
-      self.raw_boost_icon = "<b>&#8593;</b>" # up arrow
       self.children.append(child)
 
   def render(self, depth=0, url_prefix=""):
