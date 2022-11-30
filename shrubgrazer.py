@@ -6,6 +6,7 @@ import json
 import html
 import string
 import urllib
+import secrets
 import requests
 import traceback
 import subprocess
@@ -192,7 +193,10 @@ def post(post_id, cookies, website):
 
   subs = {
     'raw_css': template('css'),
-    'raw_header': template('partial_header', website=website),
+    'raw_header': template(
+      'partial_header',
+      website=website,
+      csrf=cookies['shrubgrazer-csrf-token'].value),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
     'raw_toggle_script': template('toggle_script'),
@@ -200,7 +204,7 @@ def post(post_id, cookies, website):
 
   return Response(template("post", subs))
 
-def feed(access_token, acct, website):
+def feed(access_token, acct, csrf_token, website):
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
@@ -220,21 +224,26 @@ def feed(access_token, acct, website):
 
   subs = {
     'raw_css': template('css'),
-    'raw_header': template('partial_header', website=website),
+    'raw_header': template(
+      'partial_header', website=website, csrf=csrf_token),
     'raw_entries': rendered_entries,
   }
 
   return Response(template("feed", subs))
 
+def hide_element(element_id):
+  return "<style>#%s{display:none}</style>" % element_id
+
 def home(cookies, website):
   if 'shrubgrazer-access-token' not in cookies:
     subs = {
-      'raw_css': template('css'),
-      'raw_header': template('partial_header', website=website),
+      'raw_css': template('css') + hide_element("logout"),
+      'raw_header': template('partial_header', website=website, csrf=''),
     }
     return Response(template("welcome", subs))
   return feed(cookies['shrubgrazer-access-token'].value,
               cookies['shrubgrazer-acct'].value,
+              cookies['shrubgrazer-csrf-token'].value,
               website=website)
 
 def create_client(domain, redirect_url):
@@ -266,14 +275,14 @@ def delete_cookie(cookie):
     "%s=deleted; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % cookie)
 
 def auth(cookies, environ, website):
-  redirect_url = "https://%sauth2" % website
+  redirect_url = "%sauth2" % website
 
   request_body_size = int(environ.get('CONTENT_LENGTH', 0) or 0)
   form_vals = urllib.parse.parse_qs(
     environ['wsgi.input'].read(request_body_size))
 
   if not form_vals:
-    return redirect(re.sub("/auth$", "/", path))
+    return redirect(website)
 
   acct = form_vals[b'acct'][0].decode('utf-8')
 
@@ -321,9 +330,11 @@ def auth2(cookies, environ, website):
 
   access_token = json.loads(resp)['access_token']
 
-
   return Response(redirect(website),
-                  set_cookie('shrubgrazer-access-token', access_token))
+                  set_cookie('shrubgrazer-access-token',
+                             access_token) +
+                  set_cookie('shrubgrazer-csrf-token',
+                             secrets.token_urlsafe(21)))
 
 def removeprefix(s, prefix):
   if s.startswith(prefix):
@@ -335,27 +346,41 @@ def removesuffix(s, suffix):
     return s[:-len(suffix)]
   return s
 
-def logout(website):
+def validate_csrf(cookies, query):
+  if 'shrubgrazer-csrf-token' in cookies:
+    expected_csrf = cookies['shrubgrazer-csrf-token'].value
+    actual_csrf, = query['csrf']
+    if expected_csrf and expected_csrf != actual_csrf:
+      raise Exception("bad csrf token")
+
+def logout(cookies, query, website):
+  validate_csrf(cookies, query)
   return Response(redirect(website),
                   delete_cookies('shrubgrazer-access-token',
-                                 'shrubgrazer-acct'))
+                                 'shrubgrazer-acct',
+                                 'shrubgrazer-csrf-token'))
+
+def full_website(host, path):
+  return "https://%s%s/" % (host, path)
 
 def start(environ, start_response):
   cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
   path = environ["PATH_INFO"]
+  host = environ["HTTP_HOST"]
 
   if re.match(".*/post/[0-9]*$", path):
-    website, _, post_id, = path.rsplit("/", 2)
-    return post(post_id, cookies, website=website + "/")
+    basepath, _, post_id, = path.rsplit("/", 2)
+    return post(post_id, cookies, website=full_website(host, basepath))
 
-  website, page = path.rsplit("/", 1)
-  website = website + "/"
+  basepath, page = path.rsplit("/", 1)
+  website = full_website(host, basepath)
 
   if not page:
     return home(cookies, website)
 
   if page == "logout":
-    return logout(website)
+    query = urllib.parse.parse_qs(environ['QUERY_STRING'])
+    return logout(cookies, query, website)
 
   if page == "auth":
     return auth(cookies, environ, website)
