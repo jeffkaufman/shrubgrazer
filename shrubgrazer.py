@@ -57,27 +57,33 @@ class Attachment:
 
     return None
 
+def get_display_names(entry_json):
+  display_name = entry_json['account']['display_name']
+  acct = entry_json['account']['acct']
+  if not display_name:
+    display_name = acct
+    acct = ""
+
+  # remove unrecognized emoji colon codes
+  display_name = re.sub(":.*:", "", display_name)
+
+  return display_name, acct
+
 class Entry:
   def __init__(self, entry_json):
+    self.boosters = []
     while hasall(entry_json, 'reblog') and not hasall(entry_json, 'content'):
+      self.boosters.append(get_display_names(entry_json))
       entry_json = entry_json['reblog']
 
-    self.display_name = entry_json['account']['display_name']
-    self.acct = entry_json['account']['acct']
-
-    if not self.display_name:
-      self.display_name = self.acct
-      self.acct = ""
-
-    # remove unrecognized emoji colon codes
-    self.display_name = re.sub(":.*:", "", self.display_name)
+    self.display_name, self.acct = get_display_names(entry_json)
 
     self.view_url = entry_json["id"]
     self.external_url = entry_json["url"]
     self.flavor = 'standard'
     self.raw_ts = entry_json['created_at'].split("T")[0]
     self.raw_body = entry_json['content']
-    self.children=[]
+    self.children = []
     self.attachments = []
 
     if hasall(entry_json, 'card'):
@@ -102,6 +108,12 @@ class Entry:
     subs['raw_children'] = [
       child.render(depth=depth+1, url_prefix=url_prefix)
       for child in self.children]
+
+    subs['raw_boosted_by'] = [
+      "<tr><td><span class='display_name booster_name'>&uarr; %s</span> "
+      "<span class=acct>%s</span></td>" % (
+        html.escape(display_name), html.escape(acct))
+      for display_name, acct in self.boosters]
 
     subs['raw_attachments'] = [
       attachment.render() for attachment in self.attachments]
