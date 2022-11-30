@@ -79,6 +79,7 @@ class Entry:
 
     self.display_name, self.acct = get_display_names(entry_json)
 
+    self.post_id = entry_json["id"]
     self.view_url = entry_json["id"]
     self.external_url = entry_json["url"]
     self.flavor = 'standard'
@@ -191,15 +192,17 @@ def post(post_id, cookies, website):
     children_by_id[child_json["id"]] = child
     children_by_id[child_json["in_reply_to_id"]].children.append(child)
 
+  csrf_token = cookies['shrubgrazer-csrf-token'].value
   subs = {
     'raw_css': template('css'),
-    'raw_header': template(
-      'partial_header',
-      website=website,
-      csrf=cookies['shrubgrazer-csrf-token'].value),
+    'raw_header': template('partial_header', website=website, csrf=csrf_token),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
     'raw_toggle_script': template('toggle_script'),
+    'raw_view_tracker_script': template(
+      'view_tracker_script',
+      csrf=csrf_token,
+      view_ping_url="%sview_ping" % website),
   }
 
   return Response(template("post", subs))
@@ -227,6 +230,10 @@ def feed(access_token, acct, csrf_token, website):
     'raw_header': template(
       'partial_header', website=website, csrf=csrf_token),
     'raw_entries': rendered_entries,
+    'raw_view_tracker_script': template(
+      'view_tracker_script',
+      csrf=csrf_token,
+      view_ping_url="%sview_ping" % website),
   }
 
   return Response(template("feed", subs))
@@ -360,6 +367,10 @@ def logout(cookies, query, website):
                                  'shrubgrazer-acct',
                                  'shrubgrazer-csrf-token'))
 
+def view_ping(cookies, query):
+  validate_csrf(cookies, query)
+  return Response("ignored")
+
 def full_website(host, path):
   return "https://%s%s/" % (host, path)
 
@@ -375,11 +386,15 @@ def start(environ, start_response):
   basepath, page = path.rsplit("/", 1)
   website = full_website(host, basepath)
 
+  query = urllib.parse.parse_qs(environ['QUERY_STRING'])
+
   if not page:
     return home(cookies, website)
 
+  if page == "view_ping":
+    return view_ping(cookies, query)
+
   if page == "logout":
-    query = urllib.parse.parse_qs(environ['QUERY_STRING'])
     return logout(cookies, query, website)
 
   if page == "auth":
