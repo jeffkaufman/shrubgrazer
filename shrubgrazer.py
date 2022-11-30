@@ -268,6 +268,26 @@ def feed(access_token, acct, csrf_token, raw_ts, website):
               "where acct=? and ts < ?", (acct, max_ts))
   viewed_post_ids = set(x[0] for x in cur.fetchall())
 
+  # TODO: Time jumps aren't right.  I think these could be very
+  # natural, but right now they're not.  Properties I want:
+  #  1. At each timestamp you see the world as you would have at that time
+  #     - no posts considered from after the timestamp
+  #     - no views counted from after the timestamp
+  #     - I think this is implemented correctly
+  #  2. By clicking back and forward every post is accessible
+  #
+  # Thoughts:
+  #  - I think this is a question of choosing the right jump points.
+  #  - Right now jump points are kind of arbitrary.
+  #  - A bad case happens when you have:
+  #      jp1 < t_post < t_view < jp2
+  #  - This means that for every post + view pair we need to have a
+  #    jump point between them
+  #  - But we can collapse:
+  #     - jp1 < t_postA < t_postB < jp2 < t_viewA < t_viewB < now
+  #  - Can't always collapse, if t_viewA < t_postB
+  #     - jp1 < t_postA < jp2 < t_viewA < t_postB < jp3 < t_viewB < now
+  
   # jumping backwards
   #  - find the most recent view more than an hour ago
   #  - go back an hour before that to skip views in close succession
