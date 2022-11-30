@@ -13,6 +13,7 @@ import requests
 import traceback
 import subprocess
 import http.cookies
+import dateutil.parser
 
 script_dir = os.path.dirname(__file__)
 db_filename = "%s/sg.db" % script_dir
@@ -101,8 +102,16 @@ def get_display_names(entry_json):
 
   return display_name, acct
 
+def epoch(timestring):
+  return int(time.mktime(
+    dateutil.parser.parse(timestring)
+    .astimezone(dateutil.tz.tzlocal())
+    .timetuple()))
+
 class Entry:
   def __init__(self, entry_json):
+    self.created_at = epoch(entry_json['created_at'])
+
     self.boosters = []
     while hasall(entry_json, 'reblog') and not hasall(entry_json, 'content'):
       self.boosters.append(get_display_names(entry_json))
@@ -271,7 +280,15 @@ def feed(access_token, acct, csrf_token, raw_ts, website):
     earlier_ts, = result
     earlier_ts -= ONE_HOUR_S
   else:
-    earlier_ts = 1000000000
+    cur.execute("select ts from views "
+                "where acct=?"
+                "order by ts asc "
+                "limit 1", (acct, ))
+    result = cur.fetchone()
+    if result:
+      earlier_ts, = result
+    else:
+      earlier_ts = 1000000000
 
   # jumping forwards
   # - find the most recent view at least an hour from then
@@ -299,11 +316,13 @@ def feed(access_token, acct, csrf_token, raw_ts, website):
   rendered_entries = [
     entry.render(url_prefix="post/")
     for entry in entries
-    if int(entry.post_id) not in viewed_post_ids
+    if int(entry.post_id) not in viewed_post_ids and entry.created_at < max_ts
   ]
 
   hidden = ""
-  if not raw_ts:
+  if raw_ts and raw_ts == str(earlier_ts):
+    hidden = hide_elements("#earlier")
+  elif not raw_ts:
     hidden = hide_elements("#later")
 
   subs = {
