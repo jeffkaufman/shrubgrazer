@@ -113,8 +113,8 @@ def fetch(domain, path, access_token=None):
   headers = {}
   if access_token:
     headers["Authorization"] = "Bearer %s" % access_token
-  return requests.get("https://%s/%s" % (domain, path),
-                      headers=headers).json()
+
+  return requests.get("https://%s/%s" % (domain, path), headers=headers).json()
 
 TEMPLATES = {}
 
@@ -192,7 +192,13 @@ def feed(access_token, acct, website):
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
-  entries = fetch(domain, "api/v1/timelines/home", access_token)
+  max_id_arg = ""
+
+  entries = []
+  for i in range(1):
+    entries.extend(fetch(domain, "api/v1/timelines/home?limit=40%s" % max_id_arg,
+                         access_token))
+    max_id_arg = "&max_id=%s" % entries[-1]["id"]
 
   rendered_entries = [
     Entry(entry).render(url_prefix="post/")
