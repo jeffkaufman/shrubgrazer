@@ -232,9 +232,15 @@ def post(post_id, cookies, website):
     children_by_id[child_json["id"]] = child
     children_by_id[child_json["in_reply_to_id"]].children.append(child)
 
-  csrf_token = cookies['shrubgrazer-csrf-token'].value
+  hidden = hide_elements("#earlier", "#later")
+  if 'shrubgrazer-csrf-token' in cookies:
+    csrf_token = cookies['shrubgrazer-csrf-token'].value
+  else:
+    csrf_token = ""
+    hidden += hide_elements("#logout")
+
   subs = {
-    'raw_css': template('css') + hide_elements("#earlier", "#later"),
+    'raw_css': template('css') + hidden,
     'raw_header': template(
       'partial_header',
       website=website,
@@ -287,7 +293,7 @@ def feed(access_token, acct, csrf_token, raw_ts, website):
   #     - jp1 < t_postA < t_postB < jp2 < t_viewA < t_viewB < now
   #  - Can't always collapse, if t_viewA < t_postB
   #     - jp1 < t_postA < jp2 < t_viewA < t_postB < jp3 < t_viewB < now
-  
+
   # jumping backwards
   #  - find the most recent view more than an hour ago
   #  - go back an hour before that to skip views in close succession
