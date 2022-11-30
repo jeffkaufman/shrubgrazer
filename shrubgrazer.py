@@ -4,6 +4,7 @@ import os
 import re
 import json
 import html
+import time
 import string
 import urllib
 import sqlite3
@@ -28,6 +29,7 @@ def initialize_db(cur):
   cur.execute("create table views("
               " acct text,"
               " post_id integer,"
+              " ts integer,"
               " primary key (acct, post_id))")
 
 def get_cursor():
@@ -223,8 +225,13 @@ def post(post_id, cookies, website):
 
   csrf_token = cookies['shrubgrazer-csrf-token'].value
   subs = {
-    'raw_css': template('css'),
-    'raw_header': template('partial_header', website=website, csrf=csrf_token),
+    'raw_css': template('css') + hide_elements("#earlier", "#later"),
+    'raw_header': template(
+      'partial_header',
+      website=website,
+      csrf=csrf_token,
+      earlier="",
+      later=""),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
     'raw_toggle_script': template('toggle_script'),
@@ -236,17 +243,52 @@ def post(post_id, cookies, website):
 
   return Response(template("post", subs))
 
-def feed(access_token, acct, csrf_token, website):
+ONE_HOUR_S=60*60
+
+def feed(access_token, acct, csrf_token, raw_ts, website):
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
+  max_ts = int(time.time())
+  if raw_ts:
+    max_ts = int(raw_ts)
+
   cur, con = get_cursor()
-  cur.execute("select post_id from views where acct=?", (acct, ))
+  cur.execute("select post_id from views "
+              "where acct=? and ts < ?", (acct, max_ts))
   viewed_post_ids = set(x[0] for x in cur.fetchall())
 
-  max_id_arg = ""
+  # jumping backwards
+  #  - find the most recent view more than an hour ago
+  #  - go back an hour before that to skip views in close succession
+  cur.execute("select ts from views "
+              "where acct=? and ts < ?"
+              "order by ts desc "
+              "limit 1", (acct, max_ts - ONE_HOUR_S))
+  result = cur.fetchone()
+  if result:
+    earlier_ts, = result
+    earlier_ts -= ONE_HOUR_S
+  else:
+    earlier_ts = 1000000000
 
+  # jumping forwards
+  # - find the most recent view at least an hour from then
+  # - if it's in the future take people to the main feed
+  cur.execute("select ts from views "
+              "where acct=? and ts > ?"
+              "order by ts asc "
+              "limit 1", (acct, max_ts + ONE_HOUR_S))
+  result = cur.fetchone()
+  if result:
+    later_ts, = result
+    if later_ts > time.time():
+      later_ts = ""
+  else:
+    later_ts = ""
+
+  max_id_arg = ""
   entries = []
   for i in range(1):
     entries.extend(fetch(domain, "api/v1/timelines/home?limit=40%s" % max_id_arg,
@@ -260,10 +302,19 @@ def feed(access_token, acct, csrf_token, website):
     if int(entry.post_id) not in viewed_post_ids
   ]
 
+  hidden = ""
+  if not raw_ts:
+    hidden = hide_elements("#later")
+
   subs = {
-    'raw_css': template('css'),
+    'raw_css': template('css') + hidden,
     'raw_header': template(
-      'partial_header', website=website, csrf=csrf_token),
+      'partial_header',
+      website=website,
+      csrf=csrf_token,
+      earlier="%s%s" % (website, earlier_ts),
+      later="%s%s" % (website, later_ts)
+    ),
     'raw_entries': rendered_entries,
     'raw_view_tracker_script': template(
       'view_tracker_script',
@@ -273,19 +324,25 @@ def feed(access_token, acct, csrf_token, website):
 
   return Response(template("feed", subs))
 
-def hide_element(element_id):
-  return "<style>#%s{display:none}</style>" % element_id
+def hide_elements(*selectors):
+  return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
-def home(cookies, website):
+def home(cookies, website, ts=None):
   if 'shrubgrazer-access-token' not in cookies:
     subs = {
-      'raw_css': template('css') + hide_element("logout"),
-      'raw_header': template('partial_header', website=website, csrf=''),
+      'raw_css': template('css') + hide_elements("#logout", "#earlier", "#later"),
+      'raw_header': template(
+        'partial_header',
+        website=website,
+        csrf='',
+        earlier="",
+        later=""),
     }
     return Response(template("welcome", subs))
   return feed(cookies['shrubgrazer-access-token'].value,
               cookies['shrubgrazer-acct'].value,
               cookies['shrubgrazer-csrf-token'].value,
+              ts,
               website=website)
 
 def create_client(domain, redirect_url):
@@ -419,11 +476,13 @@ def view_ping(cookies, query):
   csrf, = query['csrf']
   post_id, = query['post_id']
 
+  ts = int(time.time())
+
   cur, con = get_cursor()
   cur.execute("select acct from accts where csrf=?", (csrf, ))
   acct, = cur.fetchone()
-  cur.execute("insert or ignore into views(acct, post_id) values(?, ?)",
-              (acct, post_id))
+  cur.execute("insert or ignore into views(acct, post_id, ts) "
+              "values(?, ?, ?)", (acct, post_id, ts))
   con.commit()
 
   return Response("noted")
@@ -445,8 +504,9 @@ def start(environ, start_response):
 
   query = urllib.parse.parse_qs(environ['QUERY_STRING'])
 
-  if not page:
-    return home(cookies, website)
+  # TODO(jefftk): fix before 2286-11-20
+  if not page or page.isdigit() and len(page) == 10:
+    return home(cookies, website, ts=page)
 
   if page == "view_ping":
     return view_ping(cookies, query)
