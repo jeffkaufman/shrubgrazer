@@ -110,7 +110,8 @@ class Entry:
       for child in self.children]
 
     subs['raw_boosted_by'] = [
-      "<tr><td><span class='display_name booster_name'>&uarr; %s</span> "
+      "<tr><td colspan=2>"
+      "<span class='display_name booster_name'>&uarr; %s</span> "
       "<span class=acct>%s</span></td>" % (
         html.escape(display_name), html.escape(acct))
       for display_name, acct in self.boosters]
