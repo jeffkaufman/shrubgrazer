@@ -6,6 +6,7 @@ import json
 import html
 import string
 import urllib
+import sqlite3
 import secrets
 import requests
 import traceback
@@ -13,6 +14,34 @@ import subprocess
 import http.cookies
 
 script_dir = os.path.dirname(__file__)
+db_filename = "%s/sg.db" % script_dir
+
+def initialize_db(cur):
+  cur.execute("create table accts("
+              " acct text primary key,"
+              " csrf text unique)")
+  cur.execute("create table acct_weights("
+              " acct text,"
+              " follow text,"
+              " weight real, "
+              " primary key (acct, follow))")
+  cur.execute("create table views("
+              " acct text,"
+              " post_id integer,"
+              " primary key (acct, post_id))")
+
+def get_cursor():
+  initialize = False
+  if not os.path.exists(db_filename):
+    initialize = True
+
+  con = sqlite3.connect(db_filename)
+  cur = con.cursor()
+
+  if initialize:
+    initialize_db(cur)
+
+  return cur, con
 
 def hasall(d, *vals):
   for val in vals:
@@ -337,11 +366,22 @@ def auth2(cookies, environ, website):
 
   access_token = json.loads(resp)['access_token']
 
+  verification = fetch(
+    domain, "/api/v1/accounts/verify_credentials", access_token)
+  if verification["username"] != username:
+    raise Exception("Credential verification failed for %s" % (acct))
+
+  csrf = secrets.token_urlsafe(32)
+
+  cur, con = get_cursor()
+  cur.execute("insert or replace into accts(acct, csrf) values(?, ?)",
+              (acct, csrf))
+  con.commit()
+
   return Response(redirect(website),
                   set_cookie('shrubgrazer-access-token',
                              access_token) +
-                  set_cookie('shrubgrazer-csrf-token',
-                             secrets.token_urlsafe(21)))
+                  set_cookie('shrubgrazer-csrf-token', csrf))
 
 def removeprefix(s, prefix):
   if s.startswith(prefix):
@@ -369,7 +409,18 @@ def logout(cookies, query, website):
 
 def view_ping(cookies, query):
   validate_csrf(cookies, query)
-  return Response("ignored")
+
+  csrf, = query['csrf']
+  post_id, = query['post_id']
+
+  cur, con = get_cursor()
+  cur.execute("select acct from accts where csrf=?", (csrf, ))
+  acct, = cur.fetchone()
+  cur.execute("insert or ignore into views(acct, post_id) values(?, ?)",
+              (acct, post_id))
+  con.commit()
+
+  return Response("noted")
 
 def full_website(host, path):
   return "https://%s%s/" % (host, path)
