@@ -26,17 +26,9 @@ class Response:
 
 class Card:
   def __init__(self, card_json):
-
-    if card_json and "{{ngMeta.description}}" in card_json.values():
-      with open("%s/details2.txt" % script_dir, "w") as outf:
-        outf.write(json.dumps(card_json))
-
     self.json = card_json
 
   def render(self):
-    if not self.json:
-      return None
-
     if hasall(self.json, 'image'):
       if 'description' not in self.json:
         self.json['description'] = ''
@@ -54,11 +46,21 @@ class Card:
 
     return template(t, self.json)
 
+class Attachment:
+  def __init__(self, attachment_json):
+    self.json = attachment_json
+
+  def render(self):
+    if self.json['type'] == 'image':
+      self.json['image'] = self.json['preview_url']
+      return template('partial_image_link_card', self.json)
+
+    return None
+
 class Entry:
   def __init__(self, entry_json):
     while hasall(entry_json, 'reblog') and not hasall(entry_json, 'content'):
       entry_json = entry_json['reblog']
-
 
     self.display_name = entry_json['account']['display_name']
     self.acct = entry_json['account']['acct']
@@ -76,7 +78,13 @@ class Entry:
     self.raw_ts = entry_json['created_at'].split("T")[0]
     self.raw_body = entry_json['content']
     self.children=[]
-    self.card =  Card(entry_json.get('card', None))
+    self.attachments = []
+
+    if hasall(entry_json, 'card'):
+      self.attachments.append(Card(entry_json['card']))
+
+    for media_attachment in entry_json.get('media_attachments', []):
+      self.attachments.append(Attachment(media_attachment))
 
     if hasall(entry_json, 'reblog'):
       child = Entry(entry_json['reblog'])
@@ -95,7 +103,8 @@ class Entry:
       child.render(depth=depth+1, url_prefix=url_prefix)
       for child in self.children]
 
-    subs['raw_card'] = self.card.render() if self.card else ''
+    subs['raw_attachments'] = [
+      attachment.render() for attachment in self.attachments]
     subs['view_url'] = url_prefix + subs['view_url']
 
     return template("partial_post", subs)
