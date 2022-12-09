@@ -237,7 +237,7 @@ def post(post_id, cookies, website):
     csrf_token = cookies['shrubgrazer-csrf-token'].value
   else:
     csrf_token = ""
-    hidden += hide_elements("#logout")
+    hidden += hide_elements("#loggedin")
 
   subs = {
     'raw_css': template('css') + hidden,
@@ -306,7 +306,7 @@ def hide_elements(*selectors):
 def home(cookies, website):
   if 'shrubgrazer-access-token' not in cookies:
     subs = {
-      'raw_css': template('css') + hide_elements("#logout"),
+      'raw_css': template('css') + hide_elements("#loggedin"),
       'raw_header': template(
         'partial_header',
         website=website,
@@ -429,19 +429,34 @@ def removesuffix(s, suffix):
     return s[:-len(suffix)]
   return s
 
-def validate_csrf(cookies, query):
+def validate_csrf(cookies, query, strict=True):
   if 'shrubgrazer-csrf-token' in cookies:
     expected_csrf = cookies['shrubgrazer-csrf-token'].value
     actual_csrf, = query['csrf']
     if expected_csrf and expected_csrf != actual_csrf:
       raise Exception("bad csrf token")
+  elif strict:
+    raise Exception("missing shrubgrazer-csrf-token cookie")
 
 def logout(cookies, query, website):
-  validate_csrf(cookies, query)
+  validate_csrf(cookies, query, strict=False)
   return Response(redirect(website),
                   delete_cookies('shrubgrazer-access-token',
                                  'shrubgrazer-acct',
                                  'shrubgrazer-csrf-token'))
+
+def clear_history(cookies, query, website):
+  validate_csrf(cookies, query)
+
+  csrf, = query['csrf']
+  cur, con = get_cursor()
+  cur.execute("select acct from accts where csrf=?", (csrf, ))
+  acct, = cur.fetchone()
+
+  cur.execute("delete from views where acct=?", (acct, ));
+  con.commit()
+
+  return Response(redirect(website))
 
 def view_ping(cookies, query):
   validate_csrf(cookies, query)
@@ -485,6 +500,9 @@ def start(environ, start_response):
 
   if page == "logout":
     return logout(cookies, query, website)
+
+  if page == "clear-history":
+    return clear_history(cookies, query, website)
 
   if page == "auth":
     return auth(cookies, environ, website)
