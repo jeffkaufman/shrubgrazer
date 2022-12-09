@@ -259,29 +259,38 @@ def post(post_id, cookies, website):
 
 ONE_HOUR_S=60*60
 
-def feed(access_token, acct, csrf_token, website):
+def feed(access_token, acct, csrf_token, website, history=False):
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
   cur, con = get_cursor()
-  cur.execute("select distinct post_id from views "
-              "where acct=?", (acct,))
-  viewed_post_ids = set(x[0] for x in cur.fetchall())
+  if history:
+    cur.execute("select post_id from views "
+                "where acct=? "
+                "order by ts desc", (acct,))
+    viewed_post_ids = [x[0] for x in cur.fetchall()]
 
-  max_id_arg = ""
-  entries = []
-  for i in range(1):
-    entries.extend(fetch(domain, "api/v1/timelines/home?limit=40%s" % max_id_arg,
-                         access_token))
-    max_id_arg = "&max_id=%s" % entries[-1]["id"]
+    rendered_entries = "<ul>%s</ul>" % (
+      "\n".join(["<li><a href='%spost/%s'>%s</a></li>" % (
+        website, post_id, post_id) for post_id in viewed_post_ids]))
+  else:
+    cur.execute("select distinct post_id from views "
+                "where acct=?", (acct,))
+    viewed_post_ids = set(x[0] for x in cur.fetchall())
+    max_id_arg = ""
+    entries = []
+    for i in range(1):
+      entries.extend(fetch(domain, "api/v1/timelines/home?limit=40%s" % max_id_arg,
+                           access_token))
+      max_id_arg = "&max_id=%s" % entries[-1]["id"]
 
-  entries = [Entry(entry) for entry in entries]
-  rendered_entries = [
-    entry.render(url_prefix="post/")
-    for entry in entries
-    if int(entry.post_id) not in viewed_post_ids
-  ]
+    entries = [Entry(entry) for entry in entries]
+    rendered_entries = [
+      entry.render(url_prefix="post/")
+      for entry in entries
+      if int(entry.post_id) not in viewed_post_ids
+    ]
 
   subs = {
     'raw_css': template('css'),
@@ -301,6 +310,13 @@ def feed(access_token, acct, csrf_token, website):
 
 def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
+
+def history(cookies, query, website):
+  return feed(cookies['shrubgrazer-access-token'].value,
+              cookies['shrubgrazer-acct'].value,
+              cookies['shrubgrazer-csrf-token'].value,
+              website=website,
+              history=True)
 
 def home(cookies, website):
   if 'shrubgrazer-access-token' not in cookies:
@@ -502,6 +518,9 @@ def start(environ, start_response):
 
   if page == "clear-history":
     return clear_history(cookies, query, website)
+
+  if page == "history":
+    return history(cookies, query, website)
 
   if page == "auth":
     return auth(cookies, environ, website)
