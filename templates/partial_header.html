@@ -1,4 +1,27 @@
 <div id=header>
 <a id=logo href="$website">shrubgrazer</a>
-<a id=logout href="${website}logout?csrf=$csrf">&rarr;</a>
+<a href="#" id=hamburger-icon>&#127828;</a>
 </div>
+
+<div id=hamburger-parent>
+  <div id=hamburger-menu class=hidden>
+    <a href="#" id=hamburger-menu-hide>x</a>
+    <ul>
+      <li id=logout><a href="${website}logout?csrf=$csrf">log out</a>
+      <li><a href="https://github.com/jeffkaufman/shrubgrazer">source code</a>
+    </ul>
+  </div>
+</div>
+
+<script>
+const hambuger_menu = document.getElementById("hamburger-menu");
+
+document.getElementById("hamburger-icon").onclick = function () {
+  hambuger_menu.classList.toggle("hidden");
+};
+
+document.getElementById("hamburger-menu-hide").onclick = function () {
+  hambuger_menu.classList.add("hidden");
+};
+
+</script>

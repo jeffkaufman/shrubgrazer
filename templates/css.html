@@ -102,11 +102,42 @@
     display: block;
     padding: 0.25em;
   }
-  #logout {
+  #hamburger-icon {
+    filter: grayscale(100%);
     display: block;
     position: absolute;
     top: 0.25em;
-    right: 0.25em;
+    left: 0.4em;
+  }
+  #hamburger-parent {
+    position: relative;
+    top: -0.5em;
+    left: 1.5em;
+  }
+  #hamburger-menu {
+    background: white;
+    border: 5px solid #bbb;
+    border-radius: 0.125em;
+    position: absolute;
+    padding: 0.5em;
+    width: calc(100% - 6em);
+  }
+  #hamburger-menu > ul > li {
+    margin-bottom: 1em;
+  }
+  .hidden {
+    display: none;
+  }
+  #hamburger-menu-hide {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0.75em;
+    height: 1em;
+    font-family: sans-serif;
+    display: block;
+    text-decoration: none;
+    color: black;
   }
   #alldone {
     padding: 1em;
