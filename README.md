@@ -5,6 +5,7 @@ Alternative Mastodon UI.  Very much in progress.
 Current status:
 * Displays posts: https://www.jefftk.com/shrubgrazer/post/[id]
 * Displays a bare feed for listed users: https://www.jefftk.com/shrubgrazer/
+* Tracks which posts you've seen
 
 Goals:
 * Algorithmic feed: https://www.jefftk.com/p/user-controlled-algorithmic-feeds

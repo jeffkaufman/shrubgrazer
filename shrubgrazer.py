@@ -31,7 +31,8 @@ def initialize_db(cur):
               " acct text,"
               " post_id integer,"
               " ts integer,"
-              " primary key (acct, post_id))")
+              " primary key (acct, post_id, ts))")
+  cur.execute("create index idx_views on views (acct, post_id)")
 
 def get_cursor():
   initialize = False
@@ -263,11 +264,9 @@ def feed(access_token, acct, csrf_token, website):
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
-  now_ts = int(time.time())
-
   cur, con = get_cursor()
-  cur.execute("select post_id from views "
-              "where acct=? and ts < ?", (acct, now_ts))
+  cur.execute("select distinct post_id from views "
+              "where acct=?", (acct,))
   viewed_post_ids = set(x[0] for x in cur.fetchall())
 
   max_id_arg = ""
