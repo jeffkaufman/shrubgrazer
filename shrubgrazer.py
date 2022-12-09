@@ -232,7 +232,7 @@ def post(post_id, cookies, website):
     children_by_id[child_json["id"]] = child
     children_by_id[child_json["in_reply_to_id"]].children.append(child)
 
-  hidden = hide_elements("#earlier", "#later")
+  hidden = ""
   if 'shrubgrazer-csrf-token' in cookies:
     csrf_token = cookies['shrubgrazer-csrf-token'].value
   else:
@@ -244,9 +244,7 @@ def post(post_id, cookies, website):
     'raw_header': template(
       'partial_header',
       website=website,
-      csrf=csrf_token,
-      earlier="",
-      later=""),
+      csrf=csrf_token),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
     'raw_toggle_script': template('toggle_script'),
@@ -260,76 +258,17 @@ def post(post_id, cookies, website):
 
 ONE_HOUR_S=60*60
 
-def feed(access_token, acct, csrf_token, raw_ts, website):
+def feed(access_token, acct, csrf_token, website):
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
-  max_ts = int(time.time())
-  if raw_ts:
-    max_ts = int(raw_ts)
+  now_ts = int(time.time())
 
   cur, con = get_cursor()
   cur.execute("select post_id from views "
-              "where acct=? and ts < ?", (acct, max_ts))
+              "where acct=? and ts < ?", (acct, now_ts))
   viewed_post_ids = set(x[0] for x in cur.fetchall())
-
-  # TODO: Time jumps aren't right.  I think these could be very
-  # natural, but right now they're not.  Properties I want:
-  #  1. At each timestamp you see the world as you would have at that time
-  #     - no posts considered from after the timestamp
-  #     - no views counted from after the timestamp
-  #     - I think this is implemented correctly
-  #  2. By clicking back and forward every post is accessible
-  #
-  # Thoughts:
-  #  - I think this is a question of choosing the right jump points.
-  #  - Right now jump points are kind of arbitrary.
-  #  - A bad case happens when you have:
-  #      jp1 < t_post < t_view < jp2
-  #  - This means that for every post + view pair we need to have a
-  #    jump point between them
-  #  - But we can collapse:
-  #     - jp1 < t_postA < t_postB < jp2 < t_viewA < t_viewB < now
-  #  - Can't always collapse, if t_viewA < t_postB
-  #     - jp1 < t_postA < jp2 < t_viewA < t_postB < jp3 < t_viewB < now
-
-  # jumping backwards
-  #  - find the most recent view more than an hour ago
-  #  - go back an hour before that to skip views in close succession
-  cur.execute("select ts from views "
-              "where acct=? and ts < ?"
-              "order by ts desc "
-              "limit 1", (acct, max_ts - ONE_HOUR_S))
-  result = cur.fetchone()
-  if result:
-    earlier_ts, = result
-    earlier_ts -= ONE_HOUR_S
-  else:
-    cur.execute("select ts from views "
-                "where acct=?"
-                "order by ts asc "
-                "limit 1", (acct, ))
-    result = cur.fetchone()
-    if result:
-      earlier_ts, = result
-    else:
-      earlier_ts = 1000000000
-
-  # jumping forwards
-  # - find the most recent view at least an hour from then
-  # - if it's in the future take people to the main feed
-  cur.execute("select ts from views "
-              "where acct=? and ts > ?"
-              "order by ts asc "
-              "limit 1", (acct, max_ts + ONE_HOUR_S))
-  result = cur.fetchone()
-  if result:
-    later_ts, = result
-    if later_ts > time.time():
-      later_ts = ""
-  else:
-    later_ts = ""
 
   max_id_arg = ""
   entries = []
@@ -342,23 +281,15 @@ def feed(access_token, acct, csrf_token, raw_ts, website):
   rendered_entries = [
     entry.render(url_prefix="post/")
     for entry in entries
-    if int(entry.post_id) not in viewed_post_ids and entry.created_at < max_ts
+    if int(entry.post_id) not in viewed_post_ids
   ]
 
-  hidden = ""
-  if raw_ts and raw_ts == str(earlier_ts):
-    hidden = hide_elements("#earlier")
-  elif not raw_ts:
-    hidden = hide_elements("#later")
-
   subs = {
-    'raw_css': template('css') + hidden,
+    'raw_css': template('css'),
     'raw_header': template(
       'partial_header',
       website=website,
       csrf=csrf_token,
-      earlier="%s%s" % (website, earlier_ts),
-      later="%s%s" % (website, later_ts)
     ),
     'raw_entries': rendered_entries,
     'raw_view_tracker_script': template(
@@ -372,22 +303,19 @@ def feed(access_token, acct, csrf_token, raw_ts, website):
 def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
-def home(cookies, website, ts=None):
+def home(cookies, website):
   if 'shrubgrazer-access-token' not in cookies:
     subs = {
-      'raw_css': template('css') + hide_elements("#logout", "#earlier", "#later"),
+      'raw_css': template('css') + hide_elements("#logout"),
       'raw_header': template(
         'partial_header',
         website=website,
-        csrf='',
-        earlier="",
-        later=""),
+        csrf='')
     }
     return Response(template("welcome", subs))
   return feed(cookies['shrubgrazer-access-token'].value,
               cookies['shrubgrazer-acct'].value,
               cookies['shrubgrazer-csrf-token'].value,
-              ts,
               website=website)
 
 def create_client(domain, redirect_url):
@@ -549,9 +477,8 @@ def start(environ, start_response):
 
   query = urllib.parse.parse_qs(environ['QUERY_STRING'])
 
-  # TODO(jefftk): fix before 2286-11-20
-  if not page or page.isdigit() and len(page) == 10:
-    return home(cookies, website, ts=page)
+  if not page:
+    return home(cookies, website)
 
   if page == "view_ping":
     return view_ping(cookies, query)
