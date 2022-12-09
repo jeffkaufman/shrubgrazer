@@ -292,8 +292,12 @@ def feed(access_token, acct, csrf_token, website, history=False):
       if int(entry.post_id) not in viewed_post_ids
     ]
 
+  hidden = ""
+  if history:
+    hidden = hide_elements("#alldone")
+
   subs = {
-    'raw_css': template('css'),
+    'raw_css': template('css') + hidden,
     'raw_header': template(
       'partial_header',
       website=website,
