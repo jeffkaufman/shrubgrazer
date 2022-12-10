@@ -1,0 +1,56 @@
+<script>
+// The goal is to send a beacon back when a post has had its header
+// (".post_meta") fully on screen for at least the minimum time.  This
+// is so we don't show the same posts over and over.
+
+onscreen = new Set();
+
+// When an element comes on screen we set a timer.  If by the time the
+// timer fires the element is still on screen we mark it as viewed.
+
+function send_view_ping(post_id) {
+  fetch("$view_ping_url?csrf=$csrf&post_id=" + post_id);
+}
+
+function handle_intersect(entries, observer) {
+  for (let entry of entries) {
+    if (entry.intersectionRatio > 0.99) {
+      onscreen.add(entry.target.getAttribute("post_id"))
+      start_observation_timer(entry.target);
+    }
+    if (entry.intersectionRatio < 0.01) {
+      onscreen.delete(entry.target.getAttribute("post_id"))
+    }
+    console.log(entry.target, entry.intersectionRatio);
+  }
+}
+
+function start_observation_timer(target) {
+  window.setTimeout(function() {
+    if (onscreen.has(target.getAttribute("post_id"))) {
+      observer.unobserve(target);
+      send_view_ping(target.getAttribute("post_id"));
+    }
+  }, 500);
+}
+
+
+const observer = new IntersectionObserver(handle_intersect, {
+  root: null,
+  rootMargin: "-50px 50px -50px 50px",
+  threshold: [0, 1],
+});
+
+function track_post(post_element) {
+  observer.observe(post_element);
+}
+
+// Track the initial elements.
+for (let element of document.getElementsByClassName("post_meta")) {
+  track_post(element);
+}
+
+// If we implement infinite scroll we need to:
+// 1. When adding elements, start tracking them.
+// 2. When removing elements, stop tracking them.
+</script>
