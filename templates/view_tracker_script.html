@@ -37,6 +37,8 @@ function load_more_content() {
         next_token = json.next_token;
         window.alldone.classList.remove("hidden");
         window.loading.classList.add("hidden");
+
+        // todo: if we're still within three screens of the end, call recursively
       });
 }
 
