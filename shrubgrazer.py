@@ -20,17 +20,17 @@ db_filename = "%s/sg.db" % script_dir
 
 def initialize_db(cur):
   cur.execute("create table accts("
-              " acct text primary key,"
-              " csrf text unique)")
+              " acct text primary key not null,"
+              " csrf text unique not null)")
   cur.execute("create table acct_weights("
-              " acct text,"
-              " follow text,"
-              " weight real, "
+              " acct text not null,"
+              " follow text not null,"
+              " weight real not null, "
               " primary key (acct, follow))")
   cur.execute("create table views("
-              " acct text,"
-              " post_id integer,"
-              " ts integer,"
+              " acct text not null,"
+              " post_id integer not null,"
+              " ts integer not null,"
               " primary key (acct, post_id, ts))")
   cur.execute("create index idx_views on views (acct, post_id)")
 
@@ -54,9 +54,10 @@ def hasall(d, *vals):
   return True
 
 class Response:
-  def __init__(self, output="", headers=[]):
+  def __init__(self, output="", headers=[], content_type="text/html"):
     self.output = output
     self.headers = headers
+    self.content_type = content_type
 
 class Card:
   def __init__(self, card_json):
@@ -111,6 +112,8 @@ def epoch(timestring):
 
 class Entry:
   def __init__(self, entry_json):
+    if entry_json.get('error', None):
+      raise Exception(entry_json['error'])
     self.created_at = epoch(entry_json['created_at'])
 
     self.boosters = []
@@ -259,6 +262,102 @@ def post(post_id, cookies, website):
 
 ONE_HOUR_S=60*60
 
+def prepare_history(acct, access_token, cur, max_ts=None):
+  if max_ts == None:
+    max_ts = int(time.time())
+  cur.execute("select post_id, ts from views "
+              "where acct=? and ts<? "
+              "order by ts desc "
+              "limit 10", (acct, max_ts))
+  result = cur.fetchall()
+  post_ids = [x[0] for x in result]
+  if post_ids:
+    _, new_max_ts = result[-1]
+  else:
+    new_max_ts = "";
+
+  _, _, domain = acct.split("@")
+  entries = []
+  already = set()
+  for post_id in post_ids:
+    if post_id in already: continue
+    body = fetch(domain, "api/v1/statuses/%s" % post_id, access_token)
+    if body.get('error', None) == 'Record not found':
+      raise Exception(post_ids)
+    entries.append(Entry(body))
+    already.add(post_id)
+
+  rendered_entries = [
+    entry.render(url_prefix="post/")
+    for entry in entries
+  ]
+
+  return rendered_entries, new_max_ts
+
+def more_history_json(cookies, query, website):
+  access_token = cookies['shrubgrazer-access-token'].value
+  acct = cookies['shrubgrazer-acct'].value
+  max_ts = int(query["next"][0])
+  cur, con = get_cursor()
+
+  rendered_entries, new_max_ts = prepare_history(
+    acct, access_token, cur, max_ts)
+
+  return Response(json.dumps({
+    "rendered_entries": rendered_entries,
+    "next_token": new_max_ts,
+  }), content_type="application/json")
+
+def prepare_feed(acct, access_token, cur, ignore_post_ids=set()):
+  cur.execute("select distinct post_id from views "
+              "where acct=?", (acct,))
+  skip_post_ids = set(x[0] for x in cur.fetchall())
+  skip_post_ids.update(ignore_post_ids)
+
+  max_id_arg = ""
+  entries = []
+  _, _, domain = acct.split("@")
+
+  entries.extend(fetch(domain, "api/v1/timelines/home?limit=10", access_token))
+  if ignore_post_ids:
+    entries.extend(fetch(domain, "api/v1/timelines/home?limit=10&max_id=%s" %
+                         min(ignore_post_ids), access_token))
+
+  rendered_entries = []
+  post_ids = []
+  for entry in entries:
+    if type(entry) == type(""):
+      raise Exception(entry)
+
+    if entry.get("reblog", None):
+      post_id = int(entry["reblog"]["id"])
+    else:
+      post_id = entry["id"]
+
+    if post_id in skip_post_ids: continue
+
+    #raise Exception("%r, %r" % (post_id, skip_post_ids))
+
+    rendered_entries.append(Entry(entry).render(url_prefix="post/"))
+    post_ids.append(post_id)
+
+  return rendered_entries, post_ids
+
+def more_feed_json(cookies, query, website):
+  access_token = cookies['shrubgrazer-access-token'].value
+  acct = cookies['shrubgrazer-acct'].value
+  ignore_post_ids = json.loads(query["next"][0])
+  cur, con = get_cursor()
+
+  rendered_entries, post_ids = prepare_feed(
+    acct, access_token, cur, ignore_post_ids)
+
+  return Response(json.dumps({
+    "rendered_entries": rendered_entries,
+    "next_token": post_ids,
+  }), content_type="application/json")
+
+
 def feed(access_token, acct, csrf_token, website, history=False):
   _, username, domain = acct.split("@")
   if not os.path.exists(client_config_fname(domain)):
@@ -266,31 +365,13 @@ def feed(access_token, acct, csrf_token, website, history=False):
 
   cur, con = get_cursor()
   if history:
-    cur.execute("select post_id from views "
-                "where acct=? "
-                "order by ts desc", (acct,))
-    viewed_post_ids = [x[0] for x in cur.fetchall()]
-
-    rendered_entries = "<ul>%s</ul>" % (
-      "\n".join(["<li><a href='%spost/%s'>%s</a></li>" % (
-        website, post_id, post_id) for post_id in viewed_post_ids]))
+    rendered_entries, next_token = prepare_history(acct, access_token, cur)
+    rendered_entries = "\n".join(rendered_entries)
+    more_content_path = "more_history_json"
   else:
-    cur.execute("select distinct post_id from views "
-                "where acct=?", (acct,))
-    viewed_post_ids = set(x[0] for x in cur.fetchall())
-    max_id_arg = ""
-    entries = []
-    for i in range(1):
-      entries.extend(fetch(domain, "api/v1/timelines/home?limit=40%s" % max_id_arg,
-                           access_token))
-      max_id_arg = "&max_id=%s" % entries[-1]["id"]
-
-    entries = [Entry(entry) for entry in entries]
-    rendered_entries = [
-      entry.render(url_prefix="post/")
-      for entry in entries
-      if int(entry.post_id) not in viewed_post_ids
-    ]
+    rendered_entries, next_token = prepare_feed(acct, access_token, cur)
+    rendered_entries = "\n".join(rendered_entries)
+    more_content_path = "more_feed_json"
 
   hidden = ""
   if history:
@@ -304,9 +385,12 @@ def feed(access_token, acct, csrf_token, website, history=False):
       csrf=csrf_token,
     ),
     'raw_entries': rendered_entries,
+    'next_token': json.dumps(next_token),
     'raw_view_tracker_script': template(
       'view_tracker_script',
       csrf=csrf_token,
+      should_track_views="false" if history else "true",
+      more_content_url="%s%s" % (website, more_content_path),
       view_ping_url="%sview_ping" % website),
   }
 
@@ -484,6 +568,7 @@ def view_ping(cookies, query):
   post_id, = query['post_id']
 
   ts = int(time.time())
+  post_id = int(post_id)
 
   cur, con = get_cursor()
   cur.execute("select acct from accts where csrf=?", (csrf, ))
@@ -526,6 +611,12 @@ def start(environ, start_response):
   if page == "history":
     return history(cookies, query, website)
 
+  if page == "more_history_json":
+    return more_history_json(cookies, query, website)
+
+  if page == "more_feed_json":
+    return more_feed_json(cookies, query, website)
+
   if page == "auth":
     return auth(cookies, environ, website)
 
@@ -544,7 +635,7 @@ def application(environ, start_response):
     response = start(environ, start_response)
     output = response.output
     headers = response.headers
-    headers.append(('content-type', 'text/html'))
+    headers.append(('content-type', response.content_type))
     start_response('200 OK', headers)
   except Exception as e:
     output = die500(start_response, e)

@@ -12,8 +12,43 @@ function send_view_ping(post_id) {
   fetch("$view_ping_url?csrf=$csrf&post_id=" + post_id);
 }
 
+function load_more_content() {
+  console.log("call to load_more_content");
+  if (!next_token ||
+      !window.loading.classList.contains("hidden")) return;
+
+  window.alldone.classList.add("hidden");
+  window.loading.classList.remove("hidden");
+  fetch("$more_content_url?next=" + encodeURIComponent(
+    JSON.stringify(next_token))).then(
+    function(response) { return response.json() }).then(
+      function(json) {
+        for (rendered_entry of json.rendered_entries) {
+          const post_parent = document.createElement("div");
+          post_parent.innerHTML = rendered_entry;
+          const post = post_parent.children[0];
+          const post_meta = post.children[0];
+          window.entries.appendChild(post);
+          if ($should_track_views) {
+            observer.observe(post_meta);
+          }
+        }
+
+        next_token = json.next_token;
+        window.alldone.classList.remove("hidden");
+        window.loading.classList.add("hidden");
+      });
+}
+
 function handle_intersect(entries, observer) {
   for (let entry of entries) {
+    if (entry.target == placeholder) {
+      if (entry.intersectionRatio > 0) {
+        load_more_content();
+      }
+      continue;
+    }
+
     if (entry.intersectionRatio > 0.99) {
       onscreen.add(entry.target.getAttribute("post_id"))
       start_observation_timer(entry.target);
@@ -21,7 +56,6 @@ function handle_intersect(entries, observer) {
     if (entry.intersectionRatio < 0.01) {
       onscreen.delete(entry.target.getAttribute("post_id"))
     }
-    console.log(entry.target, entry.intersectionRatio);
   }
 }
 
@@ -41,16 +75,14 @@ const observer = new IntersectionObserver(handle_intersect, {
   threshold: [0, 1],
 });
 
-function track_post(post_element) {
-  observer.observe(post_element);
-}
-
 // Track the initial elements.
-for (let element of document.getElementsByClassName("post_meta")) {
-  track_post(element);
+if ($should_track_views) {
+  for (let element of document.getElementsByClassName("post_meta")) {
+    observer.observe(element);
+  }
 }
 
-// If we implement infinite scroll we need to:
-// 1. When adding elements, start tracking them.
-// 2. When removing elements, stop tracking them.
+const placeholder = document.getElementById("end-of-feed-placeholder");
+observer.observe(placeholder);
+
 </script>

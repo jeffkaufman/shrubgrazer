@@ -8,7 +8,12 @@
   <div id=entries>
   $raw_entries
   </div>
-  <div id=alldone>nothing more worth showing</div>
+  <div id=end-of-feed-placeholder-parent>
+    <div id=end-of-feed-placeholder></div>
   </div>
+  <div id=alldone>nothing more worth showing</div>
+  <div id=loading class=hidden>loading...</div>
+  </div>
+  <script>let next_token = $next_token;</script>
   $raw_view_tracker_script
 </html>

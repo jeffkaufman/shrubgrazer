@@ -143,9 +143,22 @@
     text-decoration: none;
     color: black;
   }
-  #alldone {
+  #alldone, #loading {
     padding: 1em;
     background-color: white;
     text-align: center;
+  }
+  #end-of-feed-placeholder-parent {
+    position: relative;
+    width: 100%;
+    height: 0;
+  }
+  #end-of-feed-placeholder {
+    position: absolute;
+    width: 100%;
+    top: -300vh;
+    height: 300vh;
+    pointer-event: none;
+    z-index: -1;
   }
 </style>
