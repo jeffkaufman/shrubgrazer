@@ -3,33 +3,36 @@
 Alternative Mastodon UI.  Very much in progress.
 
 Current status:
+* Displays feed: https://www.jefftk.com/shrubgrazer/
 * Displays posts: https://www.jefftk.com/shrubgrazer/post/[id]
-* Displays a bare feed for listed users: https://www.jefftk.com/shrubgrazer/
+  * Tree-style display of posts
+* Displays history: https://www.jefftk.com/shrubgrazer/history
 * Tracks which posts you've seen
-
-Goals:
-* Algorithmic feed: https://www.jefftk.com/p/user-controlled-algorithmic-feeds
-* Tree-style display of posts
+* "Infinite" scroll
+  * Not really: at some point it tells you you're done
+  * But it does load more entries dynamically as you scroll down
 
 Algorithmic feed plan:
+* Context: https://www.jefftk.com/p/user-controlled-algorithmic-feeds
 * Track which entries have been on screen for at least a second
   * "Unviewed" entries are ones that haven't been
 * Per-person priority scores
   * Can click on posts to up/down priority, plus there's a control panel
 * Feed is a prioritized list of unviewed entries:
-  * First sort by user priority
-  * Then group by thread
-    * This prevents seeing posts in 3/3, 2/3, 1/3 order
-  * Then show chronologically
-  * For later: give some context for posts
+  * Default prioritization:
+    * First sort by user priority
+    * Then group by thread
+      * This prevents seeing posts in 3/3, 2/3, 1/3 order
+    * Then show chronologically
+    * For later: give some context for posts
+  * Try to make this pluggable, since this is a big place I expect
+    preferences to differ.
 * When viewing a given post's tree, unviewed items are marked in the left margin
 
 Next steps:
-* SQLite for storing users, priorities, and views
-* Unprioritized feed
+* Rework feed to use IDs, like history does
 * Voting
-* Control panel
-* View tracking
+* Prioritization control panel
 * Prioritized feed
 
 ## Installation

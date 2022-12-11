@@ -318,6 +318,12 @@ def prepare_feed(acct, access_token, cur, ignore_post_ids=set()):
   entries = []
   _, _, domain = acct.split("@")
 
+  # Todo: Completely rework this.  We should have a list of all
+  # post_ids (and anything else that goes into prioritizing them, like
+  # ts, author, boosters) in the db and each time we go to get things
+  # from the feed we should pull the highest prioritiy unviewed ids.
+  # Then we can use the history flow to fetch those entries and
+  # display them.
   entries.extend(fetch(domain, "api/v1/timelines/home?limit=10", access_token))
   if ignore_post_ids:
     entries.extend(fetch(domain, "api/v1/timelines/home?limit=10&max_id=%s" %
