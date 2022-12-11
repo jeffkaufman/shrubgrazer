@@ -330,9 +330,10 @@ def prepare_feed(acct, access_token, cur, ignore_post_ids=set()):
       raise Exception(entry)
 
     if entry.get("reblog", None):
-      post_id = int(entry["reblog"]["id"])
+      post_id = entry["reblog"]["id"]
     else:
       post_id = entry["id"]
+    post_id = int(post_id)
 
     if post_id in skip_post_ids: continue
 

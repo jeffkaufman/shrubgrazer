@@ -15,7 +15,10 @@ function send_view_ping(post_id) {
 function load_more_content() {
   console.log("call to load_more_content");
   if (!next_token ||
-      !window.loading.classList.contains("hidden")) return;
+      (Array.isArray(next_token) && !next_token.length) ||
+      !window.loading.classList.contains("hidden")) {
+    return;
+  }
 
   window.alldone.classList.add("hidden");
   window.loading.classList.remove("hidden");
@@ -38,8 +41,17 @@ function load_more_content() {
         window.alldone.classList.remove("hidden");
         window.loading.classList.add("hidden");
 
-        // todo: if we're still within three screens of the end, call recursively
+        if (placeholder_onscreen()) {
+          // User got near the bottom by the time we finished
+          // painting; load more.
+          setTimeout(load_more_content, 0);
+        }
       });
+}
+
+function placeholder_onscreen() {
+  const rect = placeholder.getBoundingClientRect();
+  return rect.top < window.innerHeight;
 }
 
 function handle_intersect(entries, observer) {
