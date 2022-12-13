@@ -19,16 +19,24 @@
     </ul>
   </div>
 </div>
+<div id=hamburger-glass-pane class=hidden>
+</div>
 
 <script>
-const hambuger_menu = document.getElementById("hamburger-menu");
+const hamburger_menu = document.getElementById("hamburger-menu");
+const hamburger_pane = document.getElementById("hamburger-glass-pane");
 
 document.getElementById("hamburger-icon").onclick = function () {
-  hambuger_menu.classList.toggle("hidden");
+  hamburger_menu.classList.toggle("hidden");
+  hamburger_pane.classList.toggle("hidden");
 };
 
-document.getElementById("hamburger-menu-hide").onclick = function () {
-  hambuger_menu.classList.add("hidden");
-};
+function hide_hamburger_menu(e) {
+  hamburger_menu.classList.add("hidden");
+  hamburger_pane.classList.add("hidden");
+}
+
+document.getElementById("hamburger-menu-hide").onclick = hide_hamburger_menu;
+hamburger_pane.onclick = hide_hamburger_menu;
 
 </script>
