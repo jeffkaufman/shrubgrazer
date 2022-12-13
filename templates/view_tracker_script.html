@@ -16,7 +16,8 @@ function load_more_content() {
   console.log("call to load_more_content");
   if (!next_token ||
       (Array.isArray(next_token) && !next_token.length) ||
-      !window.loading.classList.contains("hidden")) {
+      !window.loading.classList.contains("hidden") ||
+      !"$more_content_url") {
     return;
   }
 

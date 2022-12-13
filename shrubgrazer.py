@@ -54,10 +54,22 @@ def hasall(d, *vals):
   return True
 
 class Response:
-  def __init__(self, output="", headers=[], content_type="text/html"):
+  def __init__(self,
+               output="",
+               headers=[],
+               content_type=None,
+               status="200 OK"):
     self.output = output
     self.headers = headers
-    self.content_type = content_type
+    self.status = status
+
+    if content_type:
+      self.content_type = content_type
+    else:
+      if status == "200 OK":
+        self.content_type = "text/html"
+      else:
+        self.content_type = "text/plain"
 
 class Card:
   def __init__(self, card_json):
@@ -209,18 +221,18 @@ def template(template_name, subs={}, **kwargs):
     raise
 
 
-def post(post_id, cookies, website):
+def post(post_id, req):
   if not re.match('^[0-9]+$', post_id):
     return "invalid post id\n"
 
-  domain = "mastodon.mit.edu"
-  access_token = None
-  if 'shrubgrazer-access-token' in cookies:
-    _, _, domain = cookies['shrubgrazer-acct'].value.split("@")
-    access_token = cookies['shrubgrazer-access-token'].value
+  if req.logged_in():
+    domain = req.domain()
+  else:
+    domain = "mastodon.mit.edu"
 
-  body = fetch(domain, "api/v1/statuses/%s" % post_id, access_token)
-  context = fetch(domain, "api/v1/statuses/%s/context" % post_id, access_token)
+  body = fetch(domain, "api/v1/statuses/%s" % post_id, req.access_token())
+  context = fetch(domain, "api/v1/statuses/%s/context" % post_id,
+                  req.access_token())
 
   rendered_ancestors = [
     Entry(ancestor).render()
@@ -237,38 +249,39 @@ def post(post_id, cookies, website):
     children_by_id[child_json["in_reply_to_id"]].children.append(child)
 
   hidden = ""
-  if 'shrubgrazer-csrf-token' in cookies:
-    csrf_token = cookies['shrubgrazer-csrf-token'].value
-  else:
-    csrf_token = ""
+
+  if not req.logged_in():
     hidden += hide_elements("#loggedin")
 
   subs = {
     'raw_css': template('css') + hidden,
     'raw_header': template(
       'partial_header',
-      website=website,
-      csrf=csrf_token),
+      website=req.website,
+      csrf=req.csrf()),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(),
     'raw_toggle_script': template('toggle_script'),
     'raw_view_tracker_script': template(
       'view_tracker_script',
-      csrf=csrf_token,
-      view_ping_url="%sview_ping" % website),
+      csrf=req.csrf(),
+      more_content_url='',
+      should_track_views="true",
+      view_ping_url=req.make_path("view_ping")),
   }
 
   return Response(template("post", subs))
 
 ONE_HOUR_S=60*60
 
-def prepare_history(acct, access_token, cur, max_ts=None):
-  if max_ts == None:
+def prepare_history(req, max_ts=None):
+  if max_ts is None:
     max_ts = int(time.time())
+  cur, con = req.db()
   cur.execute("select post_id, ts from views "
               "where acct=? and ts<? "
               "order by ts desc "
-              "limit 10", (acct, max_ts))
+              "limit 10", (req.acct(), max_ts))
   result = cur.fetchall()
   post_ids = [x[0] for x in result]
   if post_ids:
@@ -276,12 +289,11 @@ def prepare_history(acct, access_token, cur, max_ts=None):
   else:
     new_max_ts = "";
 
-  _, _, domain = acct.split("@")
   entries = []
   already = set()
   for post_id in post_ids:
     if post_id in already: continue
-    body = fetch(domain, "api/v1/statuses/%s" % post_id, access_token)
+    body = fetch(req.domain(), "api/v1/statuses/%s" % post_id, access_token)
     if body.get('error', None) == 'Record not found':
       raise Exception(post_ids)
     entries.append(Entry(body))
@@ -294,29 +306,24 @@ def prepare_history(acct, access_token, cur, max_ts=None):
 
   return rendered_entries, new_max_ts
 
-def more_history_json(cookies, query, website):
-  access_token = cookies['shrubgrazer-access-token'].value
-  acct = cookies['shrubgrazer-acct'].value
-  max_ts = int(query["next"][0])
-  cur, con = get_cursor()
-
+def more_history_json(req):
   rendered_entries, new_max_ts = prepare_history(
-    acct, access_token, cur, max_ts)
+    req, max_ts=int(req.query("next")))
 
   return Response(json.dumps({
     "rendered_entries": rendered_entries,
     "next_token": new_max_ts,
   }), content_type="application/json")
 
-def prepare_feed(acct, access_token, cur, ignore_post_ids=set()):
+def prepare_feed(req, ignore_post_ids=set()):
+  cur, con = req.db()
   cur.execute("select distinct post_id from views "
-              "where acct=?", (acct,))
+              "where acct=?", (req.acct(),))
   skip_post_ids = set(x[0] for x in cur.fetchall())
   skip_post_ids.update(ignore_post_ids)
 
   max_id_arg = ""
   entries = []
-  _, _, domain = acct.split("@")
 
   # Todo: Completely rework this.  We should have a list of all
   # post_ids (and anything else that goes into prioritizing them, like
@@ -324,10 +331,14 @@ def prepare_feed(acct, access_token, cur, ignore_post_ids=set()):
   # from the feed we should pull the highest prioritiy unviewed ids.
   # Then we can use the history flow to fetch those entries and
   # display them.
-  entries.extend(fetch(domain, "api/v1/timelines/home?limit=10", access_token))
+  entries.extend(fetch(req.domain(),
+                       "api/v1/timelines/home?limit=10",
+                       req.access_token()))
   if ignore_post_ids:
-    entries.extend(fetch(domain, "api/v1/timelines/home?limit=10&max_id=%s" %
-                         min(ignore_post_ids), access_token))
+    entries.extend(fetch(req.domain(),
+                         "api/v1/timelines/home?limit=10&max_id=%s" %
+                             min(ignore_post_ids),
+                         req.access_token()))
 
   rendered_entries = []
   post_ids = []
@@ -343,21 +354,14 @@ def prepare_feed(acct, access_token, cur, ignore_post_ids=set()):
 
     if post_id in skip_post_ids: continue
 
-    #raise Exception("%r, %r" % (post_id, skip_post_ids))
-
     rendered_entries.append(Entry(entry).render(url_prefix="post/"))
     post_ids.append(post_id)
 
   return rendered_entries, post_ids
 
-def more_feed_json(cookies, query, website):
-  access_token = cookies['shrubgrazer-access-token'].value
-  acct = cookies['shrubgrazer-acct'].value
-  ignore_post_ids = json.loads(query["next"][0])
-  cur, con = get_cursor()
-
-  rendered_entries, post_ids = prepare_feed(
-    acct, access_token, cur, ignore_post_ids)
+def more_feed_json(req):
+  ignore_post_ids = json.loads(req.query("next"))
+  rendered_entries, post_ids = prepare_feed(req, ignore_post_ids)
 
   return Response(json.dumps({
     "rendered_entries": rendered_entries,
@@ -365,18 +369,18 @@ def more_feed_json(cookies, query, website):
   }), content_type="application/json")
 
 
-def feed(access_token, acct, csrf_token, website, history=False):
-  _, username, domain = acct.split("@")
+def feed(req, history=False):
+  _, username, domain = req.acct().split("@")
   if not os.path.exists(client_config_fname(domain)):
     raise Exception("Bad user: %s" % acct)
 
-  cur, con = get_cursor()
+  cur, con = req.db()
   if history:
-    rendered_entries, next_token = prepare_history(acct, access_token, cur)
+    rendered_entries, next_token = prepare_history(req)
     rendered_entries = "\n".join(rendered_entries)
     more_content_path = "more_history_json"
   else:
-    rendered_entries, next_token = prepare_feed(acct, access_token, cur)
+    rendered_entries, next_token = prepare_feed(req)
     rendered_entries = "\n".join(rendered_entries)
     more_content_path = "more_feed_json"
 
@@ -388,17 +392,17 @@ def feed(access_token, acct, csrf_token, website, history=False):
     'raw_css': template('css') + hidden,
     'raw_header': template(
       'partial_header',
-      website=website,
-      csrf=csrf_token,
+      website=req.website,
+      csrf=req.csrf(),
     ),
     'raw_entries': rendered_entries,
     'next_token': json.dumps(next_token),
     'raw_view_tracker_script': template(
       'view_tracker_script',
-      csrf=csrf_token,
+      csrf=req.csrf(),
+      more_content_url=req.make_path(more_content_path),
       should_track_views="false" if history else "true",
-      more_content_url="%s%s" % (website, more_content_path),
-      view_ping_url="%sview_ping" % website),
+      view_ping_url=req.make_path("view_ping")),
   }
 
   return Response(template("feed", subs))
@@ -406,27 +410,8 @@ def feed(access_token, acct, csrf_token, website, history=False):
 def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
-def history(cookies, query, website):
-  return feed(cookies['shrubgrazer-access-token'].value,
-              cookies['shrubgrazer-acct'].value,
-              cookies['shrubgrazer-csrf-token'].value,
-              website=website,
-              history=True)
-
-def home(cookies, website):
-  if 'shrubgrazer-access-token' not in cookies:
-    subs = {
-      'raw_css': template('css') + hide_elements("#loggedin"),
-      'raw_header': template(
-        'partial_header',
-        website=website,
-        csrf='')
-    }
-    return Response(template("welcome", subs))
-  return feed(cookies['shrubgrazer-access-token'].value,
-              cookies['shrubgrazer-acct'].value,
-              cookies['shrubgrazer-csrf-token'].value,
-              website=website)
+def history(req):
+  return feed(req, history=True)
 
 def create_client(domain, redirect_url):
   website = re.sub("/auth2$", "/", redirect_url)
@@ -456,28 +441,27 @@ def delete_cookie(cookie):
     "set-cookie",
     "%s=deleted; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % cookie)
 
-def auth(cookies, environ, website):
-  redirect_url = "%sauth2" % website
+def user_allowed(acct):
+  with open("%s/users.json" % script_dir) as inf:
+    allowed_users = json.load(inf)
 
-  request_body_size = int(environ.get('CONTENT_LENGTH', 0) or 0)
-  form_vals = urllib.parse.parse_qs(
-    environ['wsgi.input'].read(request_body_size))
+  return acct in allowed_users
 
-  if not form_vals:
+def auth(req):
+  redirect_url = req.make_path("auth2")
+
+  if not req.form_vals():
     return redirect(website)
 
-  acct = form_vals[b'acct'][0].decode('utf-8')
+  acct = req.form_vals()[b'acct'][0].decode('utf-8')
 
   if not acct.startswith("@"):
     acct = "@" + acct
 
-  with open("%s/users.json" % script_dir) as inf:
-    allowed_users = json.load(inf)
+  if not user_allowed(acct):
+    return Response("not authorized", status="403 Forbidden")
 
-  if acct not in allowed_users:
-    return "not authorized"
-
-  _, username, domain = acct.split("@")
+  _, _, domain = acct.split("@")
 
   if not os.path.exists(client_config_fname(domain)):
     create_client(domain, redirect_url)
@@ -491,13 +475,15 @@ def auth(cookies, environ, website):
                domain, client_config["client_id"], redirect_url)),
     set_cookie("shrubgrazer-acct", acct))
 
-def auth2(cookies, environ, website):
-  acct = cookies['shrubgrazer-acct'].value
-  _, username, domain = acct.split("@")
-  if not os.path.exists(client_config_fname(domain)):
-    raise Exception("Bad user: %s" % acct)
+def auth2(req):
+  untrusted_acct = req.cookies['shrubgrazer-acct'].value
+  if not user_allowed(untrusted_acct):
+    return Response("not authorized", status="403 Forbidden")
 
-  query = urllib.parse.parse_qs(environ['QUERY_STRING'])
+  _, untrusted_username, domain = untrusted_acct.split("@")
+  if not os.path.exists(client_config_fname(domain)):
+    # should never happen, since we already validated the acct
+    return Response("not authorized", status="403 Forbidden")
 
   with open(client_config_fname(domain)) as inf:
     client_config = json.load(inf)
@@ -507,24 +493,25 @@ def auth2(cookies, environ, website):
      client_config['client_id'],
      client_config['client_secret'],
      client_config['redirect_uri'],
-     query['code'][0],
+     req.query('code'),
      domain])
 
   access_token = json.loads(resp)['access_token']
 
   verification = fetch(
     domain, "/api/v1/accounts/verify_credentials", access_token)
-  if verification["username"] != username:
-    raise Exception("Credential verification failed for %s" % (acct))
-
+  if verification["username"] != untrusted_username:
+    return Response("credential verification failed for %s" % (
+      untrusted_acct), status="403 Forbidden")
+  acct = untrusted_acct
   csrf = secrets.token_urlsafe(32)
 
-  cur, con = get_cursor()
+  cur, con = req.db()
   cur.execute("insert or replace into accts(acct, csrf) values(?, ?)",
               (acct, csrf))
   con.commit()
 
-  return Response(redirect(website),
+  return Response(redirect(req.website),
                   set_cookie('shrubgrazer-access-token',
                              access_token) +
                   set_cookie('shrubgrazer-csrf-token', csrf))
@@ -539,98 +526,150 @@ def removesuffix(s, suffix):
     return s[:-len(suffix)]
   return s
 
-def validate_csrf(cookies, query, strict=True):
-  if 'shrubgrazer-csrf-token' in cookies:
-    expected_csrf = cookies['shrubgrazer-csrf-token'].value
-    actual_csrf, = query['csrf']
+def validate_csrf(req, strict=True):
+  if 'shrubgrazer-csrf-token' in req.cookies:
+    expected_csrf = req.cookies['shrubgrazer-csrf-token'].value
+    actual_csrf = req.query('csrf')
     if expected_csrf and expected_csrf != actual_csrf:
       raise Exception("bad csrf token")
   elif strict:
     raise Exception("missing shrubgrazer-csrf-token cookie")
 
-def logout(cookies, query, website):
-  validate_csrf(cookies, query, strict=False)
-  return Response(redirect(website),
+def logout(req):
+  validate_csrf(req, strict=False)
+  return Response(redirect(req.website),
                   delete_cookies('shrubgrazer-access-token',
                                  'shrubgrazer-acct',
                                  'shrubgrazer-csrf-token'))
 
-def clear_history(cookies, query, website):
-  validate_csrf(cookies, query)
+def clear_history(req):
+  validate_csrf(req)
 
-  csrf, = query['csrf']
-  cur, con = get_cursor()
-  cur.execute("select acct from accts where csrf=?", (csrf, ))
-  acct, = cur.fetchone()
-
-  cur.execute("delete from views where acct=?", (acct, ));
+  cur, con = req.db()
+  cur.execute("delete from views where acct=?", (req.acct(), ));
   con.commit()
 
-  return Response(redirect(website))
+  return Response(redirect(req.website))
 
-def view_ping(cookies, query):
-  validate_csrf(cookies, query)
+def view_ping(req):
+  validate_csrf(req)
 
-  csrf, = query['csrf']
-  post_id, = query['post_id']
+  csrf = req.query('csrf')
+  post_id = req.query('post_id')
 
   ts = int(time.time())
   post_id = int(post_id)
 
-  cur, con = get_cursor()
-  cur.execute("select acct from accts where csrf=?", (csrf, ))
-  acct, = cur.fetchone()
+  cur, con = req.db()
   cur.execute("insert or ignore into views(acct, post_id, ts) "
-              "values(?, ?, ?)", (acct, post_id, ts))
+              "values(?, ?, ?)", (req.acct(), post_id, ts))
   con.commit()
 
   return Response("noted")
 
-def full_website(host, path):
-  return "https://%s%s/" % (host, path)
+def logged_out_home(req):
+    subs = {
+      'raw_css': template('css') + hide_elements("#loggedin"),
+      'raw_header': template(
+        'partial_header',
+        website=req.website,
+        csrf='')
+    }
+    return Response(template("welcome", subs))
+
+class Request:
+  def __init__(self, environ):
+    self.cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
+    self.host = environ["HTTP_HOST"]
+    self._query = urllib.parse.parse_qs(environ['QUERY_STRING'])
+    self.path = environ["PATH_INFO"]
+
+    basepath, self.page = self.path.rsplit("/", 1)
+    self.website = "https://%s%s/" % (self.host, basepath)
+
+    self.environ = environ
+
+    # memoized on first use
+    self._db = None # cursor, connection
+    self._acct = None # @user@domain
+    self._form_vals = None
+
+  def make_path(self, new_path):
+    return "%s%s" % (self.website, new_path)
+
+  def logged_in(self):
+    return 'shrubgrazer-access-token' in self.cookies
+
+  def db(self):
+    if not self._db:
+      self._db = get_cursor()
+
+    return self._db
+
+  def csrf(self):
+    if 'shrubgrazer-csrf-token' not in self.cookies: return ''
+    return self.cookies['shrubgrazer-csrf-token'].value
+
+  def access_token(self):
+    if 'shrubgrazer-access-token' not in self.cookies: return ''
+    return self.cookies['shrubgrazer-access-token'].value
+
+  def acct(self):
+    if not self._acct:
+      cur, con = self.db()
+      cur.execute("select acct from accts where csrf=?", (self.csrf(), ))
+      validated_acct, = cur.fetchone()
+
+      if validated_acct != self.cookies['shrubgrazer-acct'].value:
+        raise Exception("invalid account")
+
+      self._acct = validated_acct
+
+    return self._acct
+
+  def domain(self):
+    _, _, domain = self.acct().split("@")
+    return domain
+
+  def form_vals(self):
+    if self._form_vals is None:
+      request_body_size = int(self.environ.get('CONTENT_LENGTH', 0) or 0)
+      self._form_vals = urllib.parse.parse_qs(
+        self.environ['wsgi.input'].read(request_body_size))
+    return self._form_vals
+
+  def query(self, key):
+    return self._query[key][0]
+
+ROUTES = {
+  "": feed,
+  "auth": auth,
+  "auth2": auth2,
+  "view_ping": view_ping,
+  "clear_history": clear_history,
+  "history": history,
+  "more_history_json": more_history_json,
+  "more_feed_json": more_feed_json,
+}
 
 def start(environ, start_response):
-  cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
-  path = environ["PATH_INFO"]
-  host = environ["HTTP_HOST"]
+  req = Request(environ)
 
-  if re.match(".*/post/[0-9]*$", path):
-    basepath, _, post_id, = path.rsplit("/", 2)
-    return post(post_id, cookies, website=full_website(host, basepath))
+  if re.match(".*/post/[0-9]*$", req.path):
+    basepath, _, post_id, = req.path.rsplit("/", 2)
+    req.website = "https://%s%s/" % (req.host, basepath)
+    return post(post_id, req)
 
-  basepath, page = path.rsplit("/", 1)
-  website = full_website(host, basepath)
+  if req.page == "logout":
+    return logout(req)
 
-  query = urllib.parse.parse_qs(environ['QUERY_STRING'])
+  if not req.page and not req.logged_in():
+    return logged_out_home(req)
 
-  if not page:
-    return home(cookies, website)
+  if req.page not in ROUTES:
+    return Response("Unknown URL", status="400 Bad Request")
 
-  if page == "view_ping":
-    return view_ping(cookies, query)
-
-  if page == "logout":
-    return logout(cookies, query, website)
-
-  if page == "clear-history":
-    return clear_history(cookies, query, website)
-
-  if page == "history":
-    return history(cookies, query, website)
-
-  if page == "more_history_json":
-    return more_history_json(cookies, query, website)
-
-  if page == "more_feed_json":
-    return more_feed_json(cookies, query, website)
-
-  if page == "auth":
-    return auth(cookies, environ, website)
-
-  if page == "auth2":
-    return auth2(cookies, environ, website)
-
-  return Response("unknown url\n")
+  return ROUTES[req.page](req)
 
 def die500(start_response, e):
   trb = "%s: %s\n\n%s" % (e.__class__.__name__, e, traceback.format_exc())
@@ -643,7 +682,7 @@ def application(environ, start_response):
     output = response.output
     headers = response.headers
     headers.append(('content-type', response.content_type))
-    start_response('200 OK', headers)
+    start_response(response.status, headers)
   except Exception as e:
     output = die500(start_response, e)
   output = output.encode('utf8')
