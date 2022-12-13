@@ -15,8 +15,10 @@ import subprocess
 import http.cookies
 import dateutil.parser
 
-script_dir = os.path.dirname(__file__)
-db_filename = "%s/sg.db" % script_dir
+SCRIPT_DIR = os.path.dirname(__file__)
+
+
+DB_FILENAME = "%s/sg.db" % SCRIPT_DIR
 
 def initialize_db(cur):
   cur.execute("create table accts("
@@ -34,24 +36,95 @@ def initialize_db(cur):
               " primary key (acct, post_id, ts))")
   cur.execute("create index idx_views on views (acct, post_id)")
 
-def get_cursor():
-  initialize = False
-  if not os.path.exists(db_filename):
-    initialize = True
 
-  con = sqlite3.connect(db_filename)
-  cur = con.cursor()
 
-  if initialize:
-    initialize_db(cur)
-
-  return cur, con
 
 def hasall(d, *vals):
   for val in vals:
     if not d.get(val, None):
       return False
   return True
+
+def removeprefix(s, prefix):
+  if s.startswith(prefix):
+    return s[len(prefix):]
+  return s
+
+def removesuffix(s, suffix):
+  if s.endswith(suffix):
+    return s[:-len(suffix)]
+  return s
+
+def get_display_names(entry_json):
+  display_name = entry_json['account']['display_name']
+  acct = entry_json['account']['acct']
+  if not display_name:
+    display_name = acct
+    acct = ""
+
+  # remove unrecognized emoji colon codes
+  display_name = re.sub(":.*:", "", display_name)
+
+  return display_name, acct
+
+def hide_elements(*selectors):
+  return "<style>%s{display:none}</style>" % ", ".join(selectors)
+
+def epoch(timestring):
+  return int(time.mktime(
+    dateutil.parser.parse(timestring)
+    .astimezone(dateutil.tz.tzlocal())
+    .timetuple()))
+
+
+
+
+def fetch(domain, path, access_token=None):
+  headers = {}
+  if access_token:
+    headers["Authorization"] = "Bearer %s" % access_token
+
+  return requests.get("https://%s/%s" % (domain, path), headers=headers).json()
+
+def redirect(url):
+  return template("redirect", url=url)
+
+def set_cookie(k, v):
+  return [
+    ("set-cookie",
+     "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
+       k, v, 365*24*60*60))]
+
+def delete_cookies(*cookies):
+  return [delete_cookie(cookie) for cookie in cookies]
+
+def delete_cookie(cookie):
+  return (
+    "set-cookie",
+    "%s=deleted; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % cookie)
+
+
+
+
+def create_client(domain, redirect_url):
+  website = re.sub("/auth2$", "/", redirect_url)
+  subprocess.check_call(["%s/create-client.sh" % SCRIPT_DIR,
+                         domain,
+                         redirect_url,
+                         website,
+                         client_config_fname(domain)])
+
+def client_config_fname(domain):
+  return "%s/%s.client-config.json" % (SCRIPT_DIR, domain)
+
+def user_allowed(acct):
+  with open("%s/users.json" % SCRIPT_DIR) as inf:
+    allowed_users = json.load(inf)
+
+  return acct in allowed_users
+
+
+
 
 class Response:
   def __init__(self,
@@ -70,6 +143,78 @@ class Response:
         self.content_type = "text/html"
       else:
         self.content_type = "text/plain"
+
+class Request:
+  def __init__(self, environ):
+    self.cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
+    self.host = environ["HTTP_HOST"]
+    self._query = urllib.parse.parse_qs(environ['QUERY_STRING'])
+    self.path = environ["PATH_INFO"]
+
+    basepath, self.page = self.path.rsplit("/", 1)
+    self.website = "https://%s%s/" % (self.host, basepath)
+
+    self.environ = environ
+
+    # memoized on first use
+    self._db = None # cursor, connection
+    self._acct = None # @user@domain
+    self._form_vals = None
+
+  def make_path(self, new_path):
+    return "%s%s" % (self.website, new_path)
+
+  def logged_in(self):
+    return 'shrubgrazer-access-token' in self.cookies
+
+  def db(self):
+    if not self._db:
+      initialize = not os.path.exists(DB_FILENAME)
+      con = sqlite3.connect(DB_FILENAME)
+      cur = con.cursor()
+
+      if initialize:
+        initialize_db(cur)
+
+      self._db = cur, con
+
+    return self._db
+
+  def csrf(self):
+    if 'shrubgrazer-csrf-token' not in self.cookies: return ''
+    return self.cookies['shrubgrazer-csrf-token'].value
+
+  def access_token(self):
+    if 'shrubgrazer-access-token' not in self.cookies: return ''
+    return self.cookies['shrubgrazer-access-token'].value
+
+  def acct(self):
+    if not self._acct:
+      cur, con = self.db()
+      cur.execute("select acct from accts where csrf=?", (self.csrf(), ))
+      validated_acct, = cur.fetchone()
+
+      if validated_acct != self.cookies['shrubgrazer-acct'].value:
+        raise Exception("invalid account")
+
+      self._acct = validated_acct
+
+    return self._acct
+
+  def domain(self):
+    _, _, domain = self.acct().split("@")
+    return domain
+
+  def form_vals(self):
+    if self._form_vals is None:
+      request_body_size = int(self.environ.get('CONTENT_LENGTH', 0) or 0)
+      self._form_vals = urllib.parse.parse_qs(
+        self.environ['wsgi.input'].read(request_body_size))
+    return self._form_vals
+
+  def query(self, key):
+    return self._query[key][0]
+
 
 class Card:
   def __init__(self, card_json):
@@ -103,24 +248,6 @@ class Attachment:
       return template('partial_image_link_card', self.json)
 
     return None
-
-def get_display_names(entry_json):
-  display_name = entry_json['account']['display_name']
-  acct = entry_json['account']['acct']
-  if not display_name:
-    display_name = acct
-    acct = ""
-
-  # remove unrecognized emoji colon codes
-  display_name = re.sub(":.*:", "", display_name)
-
-  return display_name, acct
-
-def epoch(timestring):
-  return int(time.mktime(
-    dateutil.parser.parse(timestring)
-    .astimezone(dateutil.tz.tzlocal())
-    .timetuple()))
 
 class Entry:
   def __init__(self, entry_json):
@@ -180,18 +307,12 @@ class Entry:
 
     return template("partial_post", subs)
 
-def fetch(domain, path, access_token=None):
-  headers = {}
-  if access_token:
-    headers["Authorization"] = "Bearer %s" % access_token
-
-  return requests.get("https://%s/%s" % (domain, path), headers=headers).json()
 
 TEMPLATES = {}
 
 def template(template_name, subs={}, **kwargs):
   if template_name not in TEMPLATES:
-    with open("%s/templates/%s.html" % (script_dir, template_name)) as inf:
+    with open("%s/templates/%s.html" % (SCRIPT_DIR, template_name)) as inf:
       t = inf.read()
     TEMPLATES[template_name] = string.Template(t)
 
@@ -216,7 +337,7 @@ def template(template_name, subs={}, **kwargs):
   try:
     return TEMPLATES[template_name].substitute(safe_subs)
   except Exception:
-    with open("%s/details.txt" % script_dir, "w") as outf:
+    with open("%s/details.txt" % SCRIPT_DIR, "w") as outf:
       outf.write(json.dumps(safe_subs))
     raise
 
@@ -407,45 +528,8 @@ def feed(req, history=False):
 
   return Response(template("feed", subs))
 
-def hide_elements(*selectors):
-  return "<style>%s{display:none}</style>" % ", ".join(selectors)
-
 def history(req):
   return feed(req, history=True)
-
-def create_client(domain, redirect_url):
-  website = re.sub("/auth2$", "/", redirect_url)
-  subprocess.check_call(["%s/create-client.sh" % script_dir,
-                         domain,
-                         redirect_url,
-                         website,
-                         client_config_fname(domain)])
-
-def redirect(url):
-  return template("redirect", url=url)
-
-def client_config_fname(domain):
-  return "%s/%s.client-config.json" % (script_dir, domain)
-
-def set_cookie(k, v):
-  return [
-    ("set-cookie",
-     "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
-       k, v, 365*24*60*60))]
-
-def delete_cookies(*cookies):
-  return [delete_cookie(cookie) for cookie in cookies]
-
-def delete_cookie(cookie):
-  return (
-    "set-cookie",
-    "%s=deleted; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % cookie)
-
-def user_allowed(acct):
-  with open("%s/users.json" % script_dir) as inf:
-    allowed_users = json.load(inf)
-
-  return acct in allowed_users
 
 def auth(req):
   redirect_url = req.make_path("auth2")
@@ -489,7 +573,7 @@ def auth2(req):
     client_config = json.load(inf)
 
   resp = subprocess.check_output(
-    ["%s/get-user-token.sh" % script_dir,
+    ["%s/get-user-token.sh" % SCRIPT_DIR,
      client_config['client_id'],
      client_config['client_secret'],
      client_config['redirect_uri'],
@@ -515,16 +599,6 @@ def auth2(req):
                   set_cookie('shrubgrazer-access-token',
                              access_token) +
                   set_cookie('shrubgrazer-csrf-token', csrf))
-
-def removeprefix(s, prefix):
-  if s.startswith(prefix):
-    return s[len(prefix):]
-  return s
-
-def removesuffix(s, suffix):
-  if s.endswith(suffix):
-    return s[:-len(suffix)]
-  return s
 
 def validate_csrf(req, strict=True):
   if 'shrubgrazer-csrf-token' in req.cookies:
@@ -568,78 +642,14 @@ def view_ping(req):
   return Response("noted")
 
 def logged_out_home(req):
-    subs = {
-      'raw_css': template('css') + hide_elements("#loggedin"),
-      'raw_header': template(
-        'partial_header',
-        website=req.website,
-        csrf='')
-    }
-    return Response(template("welcome", subs))
-
-class Request:
-  def __init__(self, environ):
-    self.cookies = http.cookies.BaseCookie(environ.get('HTTP_COOKIE', ''))
-    self.host = environ["HTTP_HOST"]
-    self._query = urllib.parse.parse_qs(environ['QUERY_STRING'])
-    self.path = environ["PATH_INFO"]
-
-    basepath, self.page = self.path.rsplit("/", 1)
-    self.website = "https://%s%s/" % (self.host, basepath)
-
-    self.environ = environ
-
-    # memoized on first use
-    self._db = None # cursor, connection
-    self._acct = None # @user@domain
-    self._form_vals = None
-
-  def make_path(self, new_path):
-    return "%s%s" % (self.website, new_path)
-
-  def logged_in(self):
-    return 'shrubgrazer-access-token' in self.cookies
-
-  def db(self):
-    if not self._db:
-      self._db = get_cursor()
-
-    return self._db
-
-  def csrf(self):
-    if 'shrubgrazer-csrf-token' not in self.cookies: return ''
-    return self.cookies['shrubgrazer-csrf-token'].value
-
-  def access_token(self):
-    if 'shrubgrazer-access-token' not in self.cookies: return ''
-    return self.cookies['shrubgrazer-access-token'].value
-
-  def acct(self):
-    if not self._acct:
-      cur, con = self.db()
-      cur.execute("select acct from accts where csrf=?", (self.csrf(), ))
-      validated_acct, = cur.fetchone()
-
-      if validated_acct != self.cookies['shrubgrazer-acct'].value:
-        raise Exception("invalid account")
-
-      self._acct = validated_acct
-
-    return self._acct
-
-  def domain(self):
-    _, _, domain = self.acct().split("@")
-    return domain
-
-  def form_vals(self):
-    if self._form_vals is None:
-      request_body_size = int(self.environ.get('CONTENT_LENGTH', 0) or 0)
-      self._form_vals = urllib.parse.parse_qs(
-        self.environ['wsgi.input'].read(request_body_size))
-    return self._form_vals
-
-  def query(self, key):
-    return self._query[key][0]
+  subs = {
+    'raw_css': template('css') + hide_elements("#loggedin"),
+    'raw_header': template(
+      'partial_header',
+      website=req.website,
+      csrf='')
+  }
+  return Response(template("welcome", subs))
 
 ROUTES = {
   "": feed,
@@ -687,12 +697,3 @@ def application(environ, start_response):
     output = die500(start_response, e)
   output = output.encode('utf8')
   return output,
-
-def server():
-  from wsgiref.simple_server import make_server
-
-  # run on port 8010
-  make_server('',8010,application).serve_forever()
-
-if __name__ == "__main__":
-  server()
