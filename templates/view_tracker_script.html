@@ -62,6 +62,8 @@ function populate_initial_feed() {
 }
 
 function populate_feed(feed_population_state) {
+  if (!"$populate_feed_url") return;
+
   fetch("$populate_feed_url?next=" +
         encodeURIComponent(feed_population_state)).then(
     function(response) { return response.json() }).then(
@@ -79,6 +81,7 @@ function populate_feed(feed_population_state) {
 }
 
 function placeholder_onscreen() {
+  if (!placeholder) return false;
   const rect = placeholder.getBoundingClientRect();
   return rect.top < window.innerHeight;
 }
@@ -156,7 +159,9 @@ for (let element of document.getElementsByClassName("post_meta")) {
 }
 
 const placeholder = document.getElementById("end-of-feed-placeholder");
-observer.observe(placeholder);
+if (placeholder) {
+  observer.observe(placeholder);
+}
 
 populate_initial_feed();
 load_more_content();
