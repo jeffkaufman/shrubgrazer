@@ -258,20 +258,15 @@ class Attachment:
     return None
 
 class Entry:
-  def __init__(self, entry_json):
+  def __init__(self, entry_json, weight):
     if entry_json.get('error', None):
       raise Exception(entry_json['error'])
     self.created_at = epoch(entry_json['created_at'])
 
-    self.boosters = []
-    while hasall(entry_json, 'reblog') and not hasall(entry_json, 'content'):
-      self.boosters.append(get_display_names(entry_json))
-      entry_json = entry_json['reblog']
-
     self.display_name, self.acct = get_display_names(entry_json)
 
     self.post_id = entry_json["id"]
-    self.view_url = entry_json["id"]
+    self.weight = weight
     self.external_url = entry_json["url"]
     self.flavor = 'standard'
     self.raw_ts = entry_json['created_at'].split("T")[0]
@@ -285,13 +280,7 @@ class Entry:
     for media_attachment in entry_json.get('media_attachments', []):
       self.attachments.append(Attachment(media_attachment))
 
-    if hasall(entry_json, 'reblog'):
-      child = Entry(entry_json['reblog'])
-      child.flavor = 'reblog'
-      self.flavor = 'boost'
-      self.children.append(child)
-
-  def render(self, depth=0, url_prefix=""):
+  def render(self, req, depth=0):
     subs = dict(
       (k, getattr(self, k))
       for k in dir(self)
@@ -299,19 +288,17 @@ class Entry:
 
     subs['parity'] = str(depth % 2)
     subs['raw_children'] = [
-      child.render(depth=depth+1, url_prefix=url_prefix)
+      child.render(req, depth=depth+1)
       for child in self.children]
-
-    subs['raw_boosted_by'] = [
-      "<tr><td colspan=2>"
-      "<span class='display_name booster_name'>&uarr; %s</span> "
-      "<span class=acct>%s</span></td>" % (
-        html.escape(display_name), html.escape(acct))
-      for display_name, acct in self.boosters]
 
     subs['raw_attachments'] = [
       attachment.render() for attachment in self.attachments]
-    subs['view_url'] = url_prefix + subs['view_url']
+    subs['view_url'] = req.make_path("post/%s" % self.post_id)
+
+    subs['up_url'] = req.make_path(
+      "upvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
+    subs['down_url'] = req.make_path(
+      "downvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
 
     return template("partial_post", subs)
 
@@ -331,9 +318,10 @@ def template(template_name, subs={}, **kwargs):
 
     if v is None:
       v = ''
-
-    if type(v) == type(1):
+    elif type(v) == type(1):
       v = str(v)
+    elif type(v) == type(1.0):
+      v = "%.1f" % v
 
     if type(v) != type(""):
       continue
@@ -364,15 +352,15 @@ def post(post_id, req):
                   req.access_token())
 
   rendered_ancestors = [
-    Entry(ancestor).render()
+    Entry(ancestor, weight="").render(req)
     for ancestor in context["ancestors"]]
 
-  root = Entry(body)
+  root = Entry(body, weight="")
   root.flavor = 'root'
   children_by_id = {post_id: root}
 
   for child_json in context["descendants"]:
-    child = Entry(child_json)
+    child = Entry(child_json, weight="")
 
     children_by_id[child_json["id"]] = child
     children_by_id[child_json["in_reply_to_id"]].children.append(child)
@@ -389,13 +377,14 @@ def post(post_id, req):
       website=req.website,
       csrf=req.csrf()),
     'raw_ancestors': rendered_ancestors,
-    'raw_post': root.render(),
+    'raw_post': root.render(req),
     'raw_toggle_script': template('toggle_script'),
     'raw_view_tracker_script': template(
       'view_tracker_script',
       csrf=req.csrf(),
       more_content_url='',
       should_track_views="true",
+      populate_feed_url='',
       view_ping_url=req.make_path("view_ping")),
   }
 
@@ -418,7 +407,10 @@ def prepare_history(req, max_ts=None):
   else:
     new_max_ts = "";
 
-  return render_post_ids(req, post_ids), new_max_ts
+  # TODO: get the weights
+  weighted_posts = [(post_id, "") for post_id in post_ids]
+
+  return render_post_ids(req, weighted_posts), new_max_ts
 
 def more_history_json(req):
   rendered_entries, new_max_ts = prepare_history(
@@ -477,23 +469,23 @@ def seen_id(cur, post_id):
   cur.execute("select post_id from posts where post_id = ?", (post_id, ))
   return bool(cur.fetchone())
 
-def render_post_ids(req, post_ids):
+def render_weighted_posts(req, weighted_posts):
   entries = []
   already = set()
-  for post_id in post_ids:
+  for post_id, weight in weighted_posts:
     if post_id in already: continue
     body = fetch(req.domain(), "api/v1/statuses/%s" % post_id,
                  req.access_token())
     if body.get('error', None) == 'Record not found':
       raise Exception(post_ids)
-    entries.append(Entry(body))
+    entries.append(Entry(body, weight))
     already.add(post_id)
 
-  return [entry.render(url_prefix="post/") for entry in entries]
+  return [entry.render(req) for entry in entries]
 
 def prepare_feed(req, ignore_post_ids=set()):
   cur, con = req.db()
-  cur.execute("select p.post_id from posts p"
+  cur.execute("select p.post_id, ifnull(aw.weight, 1) from posts p"
               " left join acct_weights aw"
               "   on aw.acct = p.acct"
               "   and aw.follow = p.post_acct"
@@ -506,12 +498,13 @@ def prepare_feed(req, ignore_post_ids=set()):
               " order by ifnull(aw.weight, 1) desc, p.created_at desc"
               " limit 10",
               (req.acct(), ",".join(str(x) for x in ignore_post_ids)))
-  post_ids = []
+  weighted_posts = []
   response = cur.fetchall()
   if response:
-    post_ids = [post_id for post_id, in response]
+    weighted_posts = [(post_id, int(weight)) for post_id, weight in response]
 
-  return render_post_ids(req, post_ids), post_ids
+  post_ids = [x[0] for x in weighted_posts]
+  return render_weighted_posts(req, weighted_posts), post_ids
 
 def more_feed_json(req):
   ignore_post_ids = json.loads(req.query("next"))
@@ -678,6 +671,35 @@ def view_ping(req):
 
   return Response("noted")
 
+def vote_json(req, delta):
+  validate_csrf(req)
+  cur, con = req.db()
+  cur.execute("select weight from acct_weights "
+              " where acct = ?"
+              "   and follow = ?", (req.acct(), req.query('follow_id')))
+  response = cur.fetchone()
+  if response:
+    old_weight, = response
+  else:
+    old_weight = 1
+
+  new_weight = int(old_weight + delta)
+  cur.execute("insert or replace into acct_weights (acct, follow, weight)"
+              " values (?, ?, ?)",
+              (req.acct(), req.query('follow_id'), new_weight))
+  con.commit()
+
+  return Response(json.dumps({
+    "weight": new_weight
+  }), content_type="application/json")
+
+def upvote_json(req):
+  return vote_json(req, 1)
+
+def downvote_json(req):
+  return vote_json(req, -1)
+
+
 def logged_out_home(req):
   subs = {
     'raw_css': template('css') + hide_elements("#loggedin"),
@@ -698,6 +720,8 @@ ROUTES = {
   "more_history_json": more_history_json,
   "more_feed_json": more_feed_json,
   "populate_feed_json": populate_feed_json,
+  "upvote": upvote_json,
+  "downvote": downvote_json,
 }
 
 def start(environ, start_response):

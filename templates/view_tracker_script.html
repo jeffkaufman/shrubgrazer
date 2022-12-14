@@ -39,7 +39,8 @@ function load_more_content() {
           const post = post_parent.children[0];
           const post_meta = post.children[0];
           window.entries.appendChild(post);
-          start_tracking(post_meta);
+          // Elements need configuring as they come on screen.
+          configure_post(post_meta);
         }
 
         next_token = json.next_token;
@@ -124,6 +125,24 @@ function start_observation_timer(target) {
   }, 500);
 }
 
+function vote_click(e) {
+  e.preventDefault();
+  const author_weight = e.target.parentElement.querySelector(".author_weight");
+  author_weight.innerText = "?";
+  fetch(e.target.dataset.url).then(
+    function(response) { return response.json() }).then(
+      function(json) {
+        author_weight.innerText = json.weight;
+      });
+}
+
+function configure_post(post_meta) {
+  start_tracking(post_meta);
+
+  for (vote of post_meta.querySelectorAll(".vote")) {
+    vote.onclick = vote_click;
+  }
+}
 
 const observer = new IntersectionObserver(handle_intersect, {
   root: null,
@@ -131,9 +150,9 @@ const observer = new IntersectionObserver(handle_intersect, {
   threshold: [0, 1],
 });
 
-// Track the initial elements.
+// Configure the initial elements.
 for (let element of document.getElementsByClassName("post_meta")) {
-  start_tracking(element);
+  configure_post(element);
 }
 
 const placeholder = document.getElementById("end-of-feed-placeholder");
