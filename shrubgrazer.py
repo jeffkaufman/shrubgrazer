@@ -29,15 +29,17 @@ def initialize_db(cur):
               " follow text not null,"
               " weight real not null, "
               " primary key (acct, follow))")
+  cur.execute("create table posts("
+              " post_id integer primary key not null,"
+              " created_at integer not null,"
+              " acct text not null,"
+              " post_acct text not null)")
   cur.execute("create table views("
               " acct text not null,"
               " post_id integer not null,"
               " ts integer not null,"
               " primary key (acct, post_id, ts))")
   cur.execute("create index idx_views on views (acct, post_id)")
-
-
-
 
 def hasall(d, *vals):
   for val in vals:
@@ -79,12 +81,16 @@ def epoch(timestring):
 
 
 
-def fetch(domain, path, access_token=None):
+def fetch(domain, path, access_token=None, raw=False):
   headers = {}
   if access_token:
     headers["Authorization"] = "Bearer %s" % access_token
 
-  return requests.get("https://%s/%s" % (domain, path), headers=headers).json()
+  response = requests.get("https://%s/%s" % (domain, path), headers=headers)
+  if raw:
+    return response
+
+  return response.json()
 
 def redirect(url):
   return template("redirect", url=url)
@@ -213,6 +219,8 @@ class Request:
     return self._form_vals
 
   def query(self, key):
+    if key not in self._query:
+      return ''
     return self._query[key][0]
 
 
@@ -410,22 +418,7 @@ def prepare_history(req, max_ts=None):
   else:
     new_max_ts = "";
 
-  entries = []
-  already = set()
-  for post_id in post_ids:
-    if post_id in already: continue
-    body = fetch(req.domain(), "api/v1/statuses/%s" % post_id, access_token)
-    if body.get('error', None) == 'Record not found':
-      raise Exception(post_ids)
-    entries.append(Entry(body))
-    already.add(post_id)
-
-  rendered_entries = [
-    entry.render(url_prefix="post/")
-    for entry in entries
-  ]
-
-  return rendered_entries, new_max_ts
+  return render_post_ids(req, post_ids), new_max_ts
 
 def more_history_json(req):
   rendered_entries, new_max_ts = prepare_history(
@@ -436,49 +429,89 @@ def more_history_json(req):
     "next_token": new_max_ts,
   }), content_type="application/json")
 
+def populate_feed_json(req):
+  next_token = req.query('next')
+  cur, con = req.db()
+
+  feed_population_state = None
+
+  if not next_token:
+    cur.execute("select max(post_id) from posts where acct = ?", (req.acct(), ))
+    response = cur.fetchone()
+    if response:
+      next_token = "&min_id=%s" % response
+    else:
+      next_token = ""  # never seen this user before
+
+  path = "api/v1/timelines/home?limit=40%s" % next_token
+  response = fetch(req.domain(), path, req.access_token(), raw=True)
+  acct = req.acct()
+
+  for entry in response.json():
+    while hasall(entry, "reblog"):
+      entry = entry["reblog"]
+
+    cur.execute("insert or ignore into posts "
+                "(post_id, created_at, acct, post_acct) "
+                "values (?, ?, ?, ?)",
+                (entry["id"],
+                 epoch(entry["created_at"]),
+                 acct,
+                 entry["account"]["acct"]))
+  con.commit()
+
+  if "min_id" in next_token:
+    prev_url = response.links.get('prev',{}).get('url','')
+    if prev_url:
+      feed_population_state, = re.findall("(&min_id=[0-9]+)$", prev_url)
+  elif "max_id" in next_token:
+    next_url = response.links.get('next',{}).get('url','')
+    if next_url:
+      feed_population_state, = re.findall("(&max_id=[0-9]+)$", next_url)
+
+  return Response(json.dumps({
+    "feed_population_state": feed_population_state,
+  }), content_type="application/json")
+
+def seen_id(cur, post_id):
+  cur.execute("select post_id from posts where post_id = ?", (post_id, ))
+  return bool(cur.fetchone())
+
+def render_post_ids(req, post_ids):
+  entries = []
+  already = set()
+  for post_id in post_ids:
+    if post_id in already: continue
+    body = fetch(req.domain(), "api/v1/statuses/%s" % post_id,
+                 req.access_token())
+    if body.get('error', None) == 'Record not found':
+      raise Exception(post_ids)
+    entries.append(Entry(body))
+    already.add(post_id)
+
+  return [entry.render(url_prefix="post/") for entry in entries]
+
 def prepare_feed(req, ignore_post_ids=set()):
   cur, con = req.db()
-  cur.execute("select distinct post_id from views "
-              "where acct=?", (req.acct(),))
-  skip_post_ids = set(x[0] for x in cur.fetchall())
-  skip_post_ids.update(ignore_post_ids)
-
-  max_id_arg = ""
-  entries = []
-
-  # Todo: Completely rework this.  We should have a list of all
-  # post_ids (and anything else that goes into prioritizing them, like
-  # ts, author, boosters) in the db and each time we go to get things
-  # from the feed we should pull the highest prioritiy unviewed ids.
-  # Then we can use the history flow to fetch those entries and
-  # display them.
-  entries.extend(fetch(req.domain(),
-                       "api/v1/timelines/home?limit=10",
-                       req.access_token()))
-  if ignore_post_ids:
-    entries.extend(fetch(req.domain(),
-                         "api/v1/timelines/home?limit=10&max_id=%s" %
-                             min(ignore_post_ids),
-                         req.access_token()))
-
-  rendered_entries = []
+  cur.execute("select p.post_id from posts p"
+              " left join acct_weights aw"
+              "   on aw.acct = p.acct"
+              "   and aw.follow = p.post_acct"
+              " left join views v"
+              "   on v.acct = p.acct"
+              "   and v.post_id = p.post_id"
+              " where p.acct = ?"
+              "   and v.post_id is null" # exclude viewed posts
+              "   and p.post_id not in (?)"
+              " order by ifnull(aw.weight, 1) desc, p.created_at desc"
+              " limit 10",
+              (req.acct(), ",".join(str(x) for x in ignore_post_ids)))
   post_ids = []
-  for entry in entries:
-    if type(entry) == type(""):
-      raise Exception(entry)
+  response = cur.fetchall()
+  if response:
+    post_ids = [post_id for post_id, in response]
 
-    if entry.get("reblog", None):
-      post_id = entry["reblog"]["id"]
-    else:
-      post_id = entry["id"]
-    post_id = int(post_id)
-
-    if post_id in skip_post_ids: continue
-
-    rendered_entries.append(Entry(entry).render(url_prefix="post/"))
-    post_ids.append(post_id)
-
-  return rendered_entries, post_ids
+  return render_post_ids(req, post_ids), post_ids
 
 def more_feed_json(req):
   ignore_post_ids = json.loads(req.query("next"))
@@ -501,8 +534,8 @@ def feed(req, history=False):
     rendered_entries = "\n".join(rendered_entries)
     more_content_path = "more_history_json"
   else:
-    rendered_entries, next_token = prepare_feed(req)
-    rendered_entries = "\n".join(rendered_entries)
+    rendered_entries = ""
+    next_token = [0] # sentinel indicating to fetch entries from the client
     more_content_path = "more_feed_json"
 
   hidden = ""
@@ -522,6 +555,7 @@ def feed(req, history=False):
       'view_tracker_script',
       csrf=req.csrf(),
       more_content_url=req.make_path(more_content_path),
+      populate_feed_url=req.make_path("populate_feed_json"),
       should_track_views="false" if history else "true",
       view_ping_url=req.make_path("view_ping")),
   }
@@ -609,12 +643,15 @@ def validate_csrf(req, strict=True):
   elif strict:
     raise Exception("missing shrubgrazer-csrf-token cookie")
 
-def logout(req):
-  validate_csrf(req, strict=False)
+def unconditional_logout(req):
   return Response(redirect(req.website),
                   delete_cookies('shrubgrazer-access-token',
                                  'shrubgrazer-acct',
                                  'shrubgrazer-csrf-token'))
+
+def logout(req):
+  validate_csrf(req, strict=False)
+  return unconditional_logout(req)
 
 def clear_history(req):
   validate_csrf(req)
@@ -660,6 +697,7 @@ ROUTES = {
   "history": history,
   "more_history_json": more_history_json,
   "more_feed_json": more_feed_json,
+  "populate_feed_json": populate_feed_json,
 }
 
 def start(environ, start_response):
@@ -669,6 +707,12 @@ def start(environ, start_response):
     basepath, _, post_id, = req.path.rsplit("/", 2)
     req.website = "https://%s%s/" % (req.host, basepath)
     return post(post_id, req)
+
+  if req.csrf():
+    cur, con = req.db()
+    cur.execute("select acct from accts where csrf = ?", (req.csrf(), ))
+    if not cur.fetchone():
+      return unconditional_logout(req)
 
   if req.page == "logout":
     return logout(req)

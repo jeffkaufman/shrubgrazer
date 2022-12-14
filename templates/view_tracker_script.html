@@ -23,8 +23,14 @@ function load_more_content() {
 
   window.alldone.classList.add("hidden");
   window.loading.classList.remove("hidden");
+
+  let actual_next_token = next_token;
+  if (Array.isArray(next_token)) {
+    actual_next_token = [...on_page_unviewed];
+  }
+
   fetch("$more_content_url?next=" + encodeURIComponent(
-    JSON.stringify(next_token))).then(
+    JSON.stringify(actual_next_token))).then(
     function(response) { return response.json() }).then(
       function(json) {
         for (rendered_entry of json.rendered_entries) {
@@ -33,9 +39,7 @@ function load_more_content() {
           const post = post_parent.children[0];
           const post_meta = post.children[0];
           window.entries.appendChild(post);
-          if ($should_track_views) {
-            observer.observe(post_meta);
-          }
+          start_tracking(post_meta);
         }
 
         next_token = json.next_token;
@@ -46,6 +50,29 @@ function load_more_content() {
           // User got near the bottom by the time we finished
           // painting; load more.
           setTimeout(load_more_content, 0);
+        }
+      });
+}
+
+function populate_initial_feed() {
+  window.alldone.classList.add("hidden");
+  window.loading.classList.remove("hidden");
+  populate_feed("");
+}
+
+function populate_feed(feed_population_state) {
+  fetch("$populate_feed_url?next=" +
+        encodeURIComponent(feed_population_state)).then(
+    function(response) { return response.json() }).then(
+      function(json) {
+        if (json.feed_population_state) {
+          window.setTimeout(function() {
+            populate_feed(json.feed_population_state);
+          }, 0);
+        } else {
+          window.alldone.classList.remove("hidden");
+          window.loading.classList.add("hidden");
+          load_more_content();
         }
       });
 }
@@ -74,10 +101,24 @@ function handle_intersect(entries, observer) {
   }
 }
 
+on_page_unviewed = new Set();
+
+function start_tracking(element) {
+  if (!$should_track_views) return;
+  observer.observe(element);
+  on_page_unviewed.add(element.getAttribute("post_id"));
+}
+
+function stop_tracking(element) {
+  if (!$should_track_views) return;
+  observer.unobserve(element);
+  on_page_unviewed.delete(element.getAttribute("post_id"));
+}
+
 function start_observation_timer(target) {
   window.setTimeout(function() {
     if (onscreen.has(target.getAttribute("post_id"))) {
-      observer.unobserve(target);
+      stop_tracking(target);
       send_view_ping(target.getAttribute("post_id"));
     }
   }, 500);
@@ -91,13 +132,14 @@ const observer = new IntersectionObserver(handle_intersect, {
 });
 
 // Track the initial elements.
-if ($should_track_views) {
-  for (let element of document.getElementsByClassName("post_meta")) {
-    observer.observe(element);
-  }
+for (let element of document.getElementsByClassName("post_meta")) {
+  start_tracking(element);
 }
 
 const placeholder = document.getElementById("end-of-feed-placeholder");
 observer.observe(placeholder);
+
+populate_initial_feed();
+load_more_content();
 
 </script>

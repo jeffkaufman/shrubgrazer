@@ -2,6 +2,9 @@
 
 Alternative Mastodon UI.  Very much in progress.
 
+Intended as a prototype and demonstration, not something I expect lots
+of people will use.
+
 Current status:
 * Displays feed: https://www.jefftk.com/shrubgrazer/
 * Displays posts: https://www.jefftk.com/shrubgrazer/post/[id]
@@ -11,8 +14,9 @@ Current status:
 * "Infinite" scroll
   * Not really: at some point it tells you you're done
   * But it does load more entries dynamically as you scroll down
+* Prioritized feed
 
-Algorithmic feed plan:
+Algorithmic feed implementation:
 * Context: https://www.jefftk.com/p/user-controlled-algorithmic-feeds
 * Track which entries have been on screen for at least a second
   * "Unviewed" entries are ones that haven't been
@@ -27,13 +31,12 @@ Algorithmic feed plan:
     * For later: give some context for posts
   * Try to make this pluggable, since this is a big place I expect
     preferences to differ.
-* When viewing a given post's tree, unviewed items are marked in the left margin
 
 Next steps:
-* Rework feed to use IDs, like history does
 * Voting
 * Prioritization control panel
-* Prioritized feed
+* Fix bug where you see things multiple times
+* When viewing a given post's tree, unviewed items should be marked
 
 ## Installation
 
