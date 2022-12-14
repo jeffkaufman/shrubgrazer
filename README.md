@@ -36,6 +36,7 @@ Next steps:
 * Voting
 * Prioritization control panel
 * Fix bug where you see things multiple times
+* Fix bug where somehow I started getting 404 for everything until I restarted
 * When viewing a given post's tree, unviewed items should be marked
 
 ## Installation
