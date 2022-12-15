@@ -515,10 +515,6 @@ def render_weighted_posts(req, weighted_posts):
     if body.get('error', None) == 'Record not found':
       raise Exception(post_ids)
 
-    if post_id == 109515117458831286:
-      with open(os.path.join(SCRIPT_DIR, "tmp.json"), "w") as outf:
-        outf.write(json.dumps(body))
-
     entries.append(Entry(body))
     already.add(post_id)
 
