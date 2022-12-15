@@ -407,9 +407,8 @@ def prepare_history(req, max_ts=None):
   else:
     new_max_ts = "";
 
-  # TODO: get the weights
-  weighted_posts = [(post_id, "") for post_id in post_ids]
-
+  # We'll get the weights later.
+  weighted_posts = [(post_id, None) for post_id in post_ids]
   return render_weighted_posts(req, weighted_posts), new_max_ts
 
 def more_history_json(req):
@@ -478,7 +477,25 @@ def render_weighted_posts(req, weighted_posts):
                  req.access_token())
     if body.get('error', None) == 'Record not found':
       raise Exception(post_ids)
-    entries.append(Entry(body, weight))
+
+    if post_id == 109515117458831286:
+      with open(os.path.join(SCRIPT_DIR, "tmp.json"), "w") as outf:
+        outf.write(json.dumps(body))
+
+    if weight is None:
+      cur, con = req.db()
+      cur.execute("select aw.weight"
+                  " from acct_weights aw"
+                  " where aw.acct = ?"
+                  "   and aw.follow = ?", (
+                    req.acct(), body["account"]["acct"]))
+      response = cur.fetchone()
+      if response:
+        weight, = response
+      else:
+        weight = 1
+
+    entries.append(Entry(body, int(weight)))
     already.add(post_id)
 
   return [entry.render(req) for entry in entries]
