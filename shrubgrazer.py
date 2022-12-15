@@ -388,15 +388,15 @@ def post(post_id, req):
                   req.access_token())
 
   rendered_ancestors = [
-    Entry(ancestor, weight="").render(req)
+    Entry(ancestor).render(req)
     for ancestor in context["ancestors"]]
 
-  root = Entry(body, weight="")
+  root = Entry(body)
   root.flavor = 'root'
   children_by_id = {post_id: root}
 
   for child_json in context["descendants"]:
-    child = Entry(child_json, weight="")
+    child = Entry(child_json)
 
     children_by_id[child_json["id"]] = child
     children_by_id[child_json["in_reply_to_id"]].children.append(child)
