@@ -263,7 +263,7 @@ class Attachment:
     return None
 
 class Entry:
-  def __init__(self, entry_json, weight):
+  def __init__(self, entry_json, weight=""):
     if entry_json.get('error', None):
       raise Exception(entry_json['error'])
     self.created_at = epoch(entry_json['created_at'])
@@ -278,7 +278,7 @@ class Entry:
     self.raw_body = entry_json['content']
     self.children = []
     self.attachments = []
-    self.favourited = entry_json['favourited']
+    self.favourited = entry_json.get('favourited', None)
 
     if hasall(entry_json, 'card'):
       self.attachments.append(Card(entry_json['card']))
@@ -286,11 +286,29 @@ class Entry:
     for media_attachment in entry_json.get('media_attachments', []):
       self.attachments.append(Attachment(media_attachment))
 
+  def _load_weight(self, req):
+    if self.weight == "":
+      cur, con = req.db()
+      cur.execute("select aw.weight"
+                  " from acct_weights aw"
+                  " where aw.acct = ?"
+                  "   and aw.follow = ?", (
+                    req.acct(), self.acct))
+      response = cur.fetchone()
+      if response:
+        weight, = response
+      else:
+        weight = 1
+      return int(weight)
+
   def render(self, req, depth=0):
     subs = dict(
       (k, getattr(self, k))
       for k in dir(self)
       if not k.startswith('__'))
+
+    if self.weight == "" and req.logged_in():
+      subs['weight'] = self._load_weight(req)
 
     subs['parity'] = str(depth % 2)
     subs['raw_children'] = [
@@ -307,7 +325,11 @@ class Entry:
       "upvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
     subs['down_url'] = req.make_path(
       "downvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
-    subs['raw_favorite_star'] = '&#9733;' if self.favourited else '&#9734;'
+    subs['raw_favorite_star'] = {
+      True: '&#9733;',
+      False: '&#9734;',
+      None: '',
+    }[self.favourited]
 
     return template("partial_post", subs)
 
@@ -377,7 +399,7 @@ def post(post_id, req):
   hidden = ""
 
   if not req.logged_in():
-    hidden += hide_elements("#loggedin")
+    hidden += hide_elements(".loggedin")
 
   subs = {
     'raw_css': template('css') + hidden,
@@ -392,7 +414,7 @@ def post(post_id, req):
       'view_tracker_script',
       csrf=req.csrf(),
       more_content_url='',
-      should_track_views="true",
+      should_track_views="true" if req.logged_in() else "false",
       populate_feed_url='',
       view_ping_url=req.make_path("view_ping")),
   }
@@ -417,7 +439,7 @@ def prepare_history(req, max_ts=None):
     new_max_ts = "";
 
   # We'll get the weights later.
-  weighted_posts = [(post_id, None) for post_id in post_ids]
+  weighted_posts = [(post_id, "") for post_id in post_ids]
   return render_weighted_posts(req, weighted_posts), new_max_ts
 
 def more_history_json(req):
@@ -491,20 +513,7 @@ def render_weighted_posts(req, weighted_posts):
       with open(os.path.join(SCRIPT_DIR, "tmp.json"), "w") as outf:
         outf.write(json.dumps(body))
 
-    if weight is None:
-      cur, con = req.db()
-      cur.execute("select aw.weight"
-                  " from acct_weights aw"
-                  " where aw.acct = ?"
-                  "   and aw.follow = ?", (
-                    req.acct(), body["account"]["acct"]))
-      response = cur.fetchone()
-      if response:
-        weight, = response
-      else:
-        weight = 1
-
-    entries.append(Entry(body, int(weight)))
+    entries.append(Entry(body))
     already.add(post_id)
 
   return [entry.render(req) for entry in entries]
