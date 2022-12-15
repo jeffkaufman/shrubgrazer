@@ -442,7 +442,7 @@ def prepare_history(req, max_ts=None):
   if post_ids:
     _, new_max_ts = result[-1]
   else:
-    new_max_ts = "";
+    new_max_ts = "END";
 
   # We'll get the weights later.
   weighted_posts = [(post_id, "") for post_id in post_ids]
@@ -525,6 +525,14 @@ def render_weighted_posts(req, weighted_posts):
   return [entry.render(req) for entry in entries]
 
 def prepare_feed(req, ignore_post_ids=set()):
+  # I can't figure out how to do a list placeholder like "in (?)" with
+  # sqlite, so I'm falling back to construcing the query without
+  # placeholders.  This is risky, because a mistake gives sql
+  # injection, but this particular construction is safe because it is
+  # filtered to only numbers.
+  safe_ignore_post_ids = ",".join(
+    x for x in ignore_post_ids if x.isdigit())
+
   cur, con = req.db()
   cur.execute("select p.post_id, ifnull(aw.weight, 1) from posts p"
               " left join acct_weights aw"
@@ -535,16 +543,21 @@ def prepare_feed(req, ignore_post_ids=set()):
               "   and v.post_id = p.post_id"
               " where p.acct = ?"
               "   and v.post_id is null" # exclude viewed posts
-              "   and p.post_id not in (?)"
+              "   and p.post_id not in (%s)"
               " order by ifnull(aw.weight, 1) desc, p.created_at desc"
-              " limit 10",
-              (req.acct(), ",".join(str(x) for x in ignore_post_ids)))
+              " limit 10" % safe_ignore_post_ids, (req.acct(), ))
   weighted_posts = []
   response = cur.fetchall()
   if response:
     weighted_posts = [(post_id, int(weight)) for post_id, weight in response]
 
   post_ids = [x[0] for x in weighted_posts]
+
+  intersection = (set(int(x) for x in post_ids) &
+                  set(int(x) for x in ignore_post_ids))
+  if intersection:
+    raise Exception(intersection)
+
   return render_weighted_posts(req, weighted_posts), post_ids
 
 def more_feed_json(req):
@@ -553,7 +566,7 @@ def more_feed_json(req):
 
   return Response(json.dumps({
     "rendered_entries": rendered_entries,
-    "next_token": post_ids,
+    "next_token": "END" if not post_ids else "NA",
   }), content_type="application/json")
 
 
@@ -569,8 +582,8 @@ def feed(req, history=False):
     more_content_path = "more_history_json"
   else:
     rendered_entries = ""
-    next_token = [0] # sentinel indicating to fetch entries from the client
     more_content_path = "more_feed_json"
+    next_token = "NA";
 
   hidden = ""
   if history:
@@ -584,7 +597,7 @@ def feed(req, history=False):
       csrf=req.csrf(),
     ),
     'raw_entries': rendered_entries,
-    'next_token': json.dumps(next_token),
+    'raw_next_token': json.dumps(next_token),
     'raw_view_tracker_script': template(
       'view_tracker_script',
       raw_vote_script=template('vote_script'),

@@ -14,9 +14,7 @@ function send_view_ping(post_id) {
 }
 
 function load_more_content() {
-  console.log("call to load_more_content");
-  if (!next_token ||
-      (Array.isArray(next_token) && !next_token.length) ||
+  if (next_token == "END" ||
       !window.loading.classList.contains("hidden") ||
       !"$more_content_url") {
     return;
@@ -26,7 +24,7 @@ function load_more_content() {
   window.loading.classList.remove("hidden");
 
   let actual_next_token = next_token;
-  if (Array.isArray(next_token)) {
+  if (next_token == "NA") {
     actual_next_token = [...on_page_unviewed];
   }
 
@@ -44,14 +42,16 @@ function load_more_content() {
           configure_post(post_meta);
         }
 
-        next_token = json.next_token;
+        if (json.next_token) {
+          next_token = json.next_token;
+        }
         window.alldone.classList.remove("hidden");
         window.loading.classList.add("hidden");
 
         if (placeholder_onscreen()) {
           // User got near the bottom by the time we finished
           // painting; load more.
-          setTimeout(load_more_content, 0);
+          setTimeout(load_more_content, 1000);
         }
       });
 }
