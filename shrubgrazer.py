@@ -62,7 +62,6 @@ def get_display_names(entry_json):
   acct = entry_json['account']['acct']
   if not display_name:
     display_name = acct
-    acct = ""
 
   # remove unrecognized emoji colon codes
   display_name = re.sub(":.*:", "", display_name)
@@ -269,6 +268,7 @@ class Entry:
     self.created_at = epoch(entry_json['created_at'])
 
     self.display_name, self.acct = get_display_names(entry_json)
+    self.display_acct = self.acct if self.acct != self.display_name else ""
 
     self.post_id = entry_json["id"]
     self.weight = weight
