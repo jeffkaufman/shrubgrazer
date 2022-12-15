@@ -139,11 +139,35 @@ function vote_click(e) {
       });
 }
 
+function favorite_click(e) {
+  e.preventDefault();
+  direction = {
+    "\u2605": -1, // black star, unfavoriting
+    "\u2606": 1,  // white star, favoriting
+  }[e.target.innerText]
+
+  if (!direction) return;
+
+  e.target.innerText = "";
+  fetch(e.target.dataset.url +
+        "&direction=" + encodeURIComponent(direction)).then(
+    function(response) { return response.json() }).then(
+      function(json) {
+        e.target.innerText = json.star;
+      });
+}
+
+
+
 function configure_post(post_meta) {
   start_tracking(post_meta);
 
   for (vote of post_meta.querySelectorAll(".vote")) {
     vote.onclick = vote_click;
+  }
+
+  for (favorite of post_meta.querySelectorAll(".favorite")) {
+    favorite.onclick = favorite_click;
   }
 }
 

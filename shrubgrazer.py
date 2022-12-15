@@ -78,15 +78,20 @@ def epoch(timestring):
     .astimezone(dateutil.tz.tzlocal())
     .timetuple()))
 
-
-
-
-def fetch(domain, path, access_token=None, raw=False):
+def fetch(domain, path, access_token=None, raw=False, post=False):
   headers = {}
   if access_token:
     headers["Authorization"] = "Bearer %s" % access_token
 
-  response = requests.get("https://%s/%s" % (domain, path), headers=headers)
+  url = "https://%s/%s" % (domain, path)
+  if post:
+    response = requests.post(url, headers=headers)
+  else:
+    response = requests.get(url, headers=headers)
+
+  if response.status_code != 200:
+    raise Exception("Status %s for %s" % (response.status_code, url))
+
   if raw:
     return response
 
@@ -273,6 +278,7 @@ class Entry:
     self.raw_body = entry_json['content']
     self.children = []
     self.attachments = []
+    self.favourited = entry_json['favourited']
 
     if hasall(entry_json, 'card'):
       self.attachments.append(Card(entry_json['card']))
@@ -294,11 +300,14 @@ class Entry:
     subs['raw_attachments'] = [
       attachment.render() for attachment in self.attachments]
     subs['view_url'] = req.make_path("post/%s" % self.post_id)
+    subs['favorite_url'] = req.make_path("favorite?post_id=%s&csrf=%s" % (
+      self.post_id, req.csrf()))
 
     subs['up_url'] = req.make_path(
       "upvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
     subs['down_url'] = req.make_path(
       "downvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
+    subs['raw_favorite_star'] = '&#9733;' if self.favourited else '&#9734;'
 
     return template("partial_post", subs)
 
@@ -602,7 +611,7 @@ def auth(req):
 
   return Response(
     redirect("https://%s/oauth/authorize?"
-             "client_id=%s&scopes=read+write&redirect_uri=%s"
+             "client_id=%s&scope=read+write&redirect_uri=%s"
              "&response_type=code" % (
                domain, client_config["client_id"], redirect_url)),
     set_cookie("shrubgrazer-acct", acct, strict=False))
@@ -692,6 +701,21 @@ def view_ping(req):
 
   return Response("noted")
 
+def favorite_json(req):
+  validate_csrf(req)
+
+  response = fetch(req.domain(),
+                   "api/v1/statuses/%s/%s" % (
+    req.query("post_id"),
+    {"1": "favourite",
+     "-1": "unfavourite"}[req.query("direction")]),
+                    req.access_token(),
+                   post=True)
+
+  return Response(json.dumps({
+    "star": "\u2605" if response['favourited'] else "\u2606"
+  }), content_type="application/json")
+
 def vote_json(req, delta):
   validate_csrf(req)
   cur, con = req.db()
@@ -743,6 +767,7 @@ ROUTES = {
   "populate_feed_json": populate_feed_json,
   "upvote": upvote_json,
   "downvote": downvote_json,
+  "favorite": favorite_json,
 }
 
 def start(environ, start_response):
