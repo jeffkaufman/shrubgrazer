@@ -1,3 +1,4 @@
+$raw_vote_script
 <script>
 // The goal is to send a beacon back when a post has had its header
 // (".post_meta") fully on screen for at least the minimum time.  This
@@ -128,17 +129,6 @@ function start_observation_timer(target) {
   }, 500);
 }
 
-function vote_click(e) {
-  e.preventDefault();
-  const author_weight = e.target.parentElement.querySelector(".author_weight");
-  author_weight.innerText = "?";
-  fetch(e.target.dataset.url).then(
-    function(response) { return response.json() }).then(
-      function(json) {
-        author_weight.innerText = json.weight;
-      });
-}
-
 function favorite_click(e) {
   e.preventDefault();
   direction = {
@@ -156,8 +146,6 @@ function favorite_click(e) {
         e.target.innerText = json.star;
       });
 }
-
-
 
 function configure_post(post_meta) {
   start_tracking(post_meta);

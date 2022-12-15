@@ -33,8 +33,6 @@ Algorithmic feed implementation:
     preferences to differ.
 
 Next steps:
-* Prioritization control panel
-* Make it so you can see weights and vote on the non-feed pages
 * Fix bug where you see things multiple times
 * Fix bug where somehow I started getting 404 for everything until I restarted
 * When viewing a given post's tree, unviewed items should be marked

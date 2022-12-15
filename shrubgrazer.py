@@ -307,8 +307,9 @@ class Entry:
       for k in dir(self)
       if not k.startswith('__'))
 
-    if self.weight == "" and req.logged_in():
-      subs['weight'] = self._load_weight(req)
+    weight = self.weight
+    if weight == "" and req.logged_in():
+      weight = self._load_weight(req)
 
     subs['parity'] = str(depth % 2)
     subs['raw_children'] = [
@@ -321,10 +322,14 @@ class Entry:
     subs['favorite_url'] = req.make_path("favorite?post_id=%s&csrf=%s" % (
       self.post_id, req.csrf()))
 
-    subs['up_url'] = req.make_path(
-      "upvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
-    subs['down_url'] = req.make_path(
-      "downvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct))
+    subs['raw_adjust_weight'] = template('partial_adjust_weight', subs={
+      'up_url': req.make_path(
+        "upvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct)),
+      'down_url': req.make_path(
+        "downvote?csrf=%s&follow_id=%s" % (req.csrf(), self.acct)),
+      'weight': weight,
+    })
+
     subs['raw_favorite_star'] = {
       True: '&#9733;',
       False: '&#9734;',
@@ -412,6 +417,7 @@ def post(post_id, req):
     'raw_toggle_script': template('toggle_script'),
     'raw_view_tracker_script': template(
       'view_tracker_script',
+      vote_script=template('vote_script'),
       csrf=req.csrf(),
       more_content_url='',
       should_track_views="true" if req.logged_in() else "false",
@@ -581,6 +587,7 @@ def feed(req, history=False):
     'next_token': json.dumps(next_token),
     'raw_view_tracker_script': template(
       'view_tracker_script',
+      vote_script=template('vote_script'),
       csrf=req.csrf(),
       more_content_url=req.make_path(more_content_path),
       populate_feed_url=req.make_path("populate_feed_json"),
@@ -728,7 +735,7 @@ def favorite_json(req):
 def vote_json(req, delta):
   validate_csrf(req)
   cur, con = req.db()
-  cur.execute("select weight from acct_weights "
+  cur.execute("select weight from acct_weights"
               " where acct = ?"
               "   and follow = ?", (req.acct(), req.query('follow_id')))
   response = cur.fetchone()
@@ -764,6 +771,36 @@ def logged_out_home(req):
   }
   return Response(template("welcome", subs))
 
+def settings(req):
+  cur, con = req.db()
+  cur.execute("select follow, weight from acct_weights"
+              " where acct = ?"
+              " order by follow desc", (req.acct(), ))
+  raw_follow_weights = [
+    template("partial_settings_weights", subs={
+      "follow": follow,
+      "csrf": req.csrf(),
+      'raw_adjust_weight': template('partial_adjust_weight', subs={
+        'up_url': req.make_path(
+          "upvote?csrf=%s&follow_id=%s" % (req.csrf(), follow)),
+        'down_url': req.make_path(
+          "downvote?csrf=%s&follow_id=%s" % (req.csrf(), follow)),
+        'weight': int(weight)}),
+      })
+    for (follow, weight) in cur.fetchall()]
+
+  subs = {
+    'raw_css': template('css'),
+    'raw_header': template(
+      'partial_header',
+      website=req.website,
+      csrf=req.csrf()),
+    'raw_vote_script': template('vote_script'),
+    'raw_follow_weights': ''.join(raw_follow_weights),
+  }
+
+  return Response(template("settings", subs))
+
 ROUTES = {
   "": feed,
   "auth": auth,
@@ -777,6 +814,7 @@ ROUTES = {
   "upvote": upvote_json,
   "downvote": downvote_json,
   "favorite": favorite_json,
+  "settings": settings,
 }
 
 def start(environ, start_response):

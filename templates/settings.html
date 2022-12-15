@@ -1,0 +1,29 @@
+<html>
+  <meta charset="utf-8">
+  <title>Shrubgrazer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  $raw_css
+  <div id=content>
+  $raw_header
+  <div id=settings>
+
+<h1>Settings</h1>
+
+<h2>Follow Weights</h2>
+<table cellpadding=5>
+<tr><th>Follow<th>Weight
+$raw_follow_weights
+</table>
+
+$raw_vote_script
+
+<script>
+for (vote of document.querySelectorAll(".vote")) {
+  vote.onclick = vote_click;
+}
+</script>
+
+  </div>
+  </div>
+
+</html>
