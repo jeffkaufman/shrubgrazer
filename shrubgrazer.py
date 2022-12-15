@@ -410,7 +410,7 @@ def prepare_history(req, max_ts=None):
   # TODO: get the weights
   weighted_posts = [(post_id, "") for post_id in post_ids]
 
-  return render_post_ids(req, weighted_posts), new_max_ts
+  return render_weighted_posts(req, weighted_posts), new_max_ts
 
 def more_history_json(req):
   rendered_entries, new_max_ts = prepare_history(
