@@ -1,0 +1,12 @@
+<script>
+function vote_click(e) {
+  e.preventDefault();
+  const author_weight = e.target.parentElement.querySelector(".author_weight");
+  author_weight.innerText = "?";
+  fetch(e.target.dataset.url).then(
+    function(response) { return response.json() }).then(
+      function(json) {
+        author_weight.innerText = json.weight;
+      });
+}
+</script>
