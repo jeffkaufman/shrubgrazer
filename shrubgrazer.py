@@ -417,7 +417,7 @@ def post(post_id, req):
     'raw_toggle_script': template('toggle_script'),
     'raw_view_tracker_script': template(
       'view_tracker_script',
-      vote_script=template('vote_script'),
+      raw_vote_script=template('vote_script'),
       csrf=req.csrf(),
       more_content_url='',
       should_track_views="true" if req.logged_in() else "false",
@@ -587,7 +587,7 @@ def feed(req, history=False):
     'next_token': json.dumps(next_token),
     'raw_view_tracker_script': template(
       'view_tracker_script',
-      vote_script=template('vote_script'),
+      raw_vote_script=template('vote_script'),
       csrf=req.csrf(),
       more_content_url=req.make_path(more_content_path),
       populate_feed_url=req.make_path("populate_feed_json"),
