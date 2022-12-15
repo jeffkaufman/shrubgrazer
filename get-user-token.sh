@@ -7,5 +7,5 @@ curl -sS \
      -F "redirect_uri=$3" \
      -F 'grant_type=authorization_code' \
      -F "code=$4" \
-     -F 'scope=read' \
+     -F 'scope=read+write' \
      "https://$5/oauth/token"

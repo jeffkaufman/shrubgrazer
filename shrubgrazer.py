@@ -95,11 +95,11 @@ def fetch(domain, path, access_token=None, raw=False):
 def redirect(url):
   return template("redirect", url=url)
 
-def set_cookie(k, v):
+def set_cookie(k, v, strict=True):
   return [
     ("set-cookie",
-     "%s=%s; Secure; HttpOnly; SameSite=Strict; Max-Age=%s" % (
-       k, v, 365*24*60*60))]
+     "%s=%s; Secure; HttpOnly; SameSite=%s; Max-Age=%s" % (
+       k, v, "Strict" if strict else "Lax", 365*24*60*60))]
 
 def delete_cookies(*cookies):
   return [delete_cookie(cookie) for cookie in cookies]
@@ -580,11 +580,15 @@ def auth(req):
   with open(client_config_fname(domain)) as inf:
     client_config = json.load(inf)
 
+  if "error" in client_config:
+    raise Exception("Client creation failed: %r" % client_config["error"])
+
   return Response(
     redirect("https://%s/oauth/authorize?"
-             "client_id=%s&scope=read&redirect_uri=%s&response_type=code" % (
+             "client_id=%s&scopes=read+write&redirect_uri=%s"
+             "&response_type=code" % (
                domain, client_config["client_id"], redirect_url)),
-    set_cookie("shrubgrazer-acct", acct))
+    set_cookie("shrubgrazer-acct", acct, strict=False))
 
 def auth2(req):
   untrusted_acct = req.cookies['shrubgrazer-acct'].value
