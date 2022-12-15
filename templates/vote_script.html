@@ -1,7 +1,8 @@
 <script>
 function vote_click(e) {
   e.preventDefault();
-  const author_weight = e.target.parentElement.querySelector(".author_weight");
+  const author_weight = e.target.closest("table").querySelector(
+      ".author_weight");
   author_weight.innerText = "?";
   fetch(e.target.dataset.url).then(
     function(response) { return response.json() }).then(

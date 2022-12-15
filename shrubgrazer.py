@@ -414,6 +414,7 @@ def post(post_id, req):
       csrf=req.csrf()),
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(req),
+    'acct': req.acct() if req.logged_in() else '',
     'raw_toggle_script': template('toggle_script'),
     'raw_view_tracker_script': template(
       'view_tracker_script',
@@ -592,6 +593,7 @@ def feed(req, history=False):
       website=req.website,
       csrf=req.csrf(),
     ),
+    'acct': req.acct(),
     'raw_entries': rendered_entries,
     'raw_next_token': json.dumps(next_token),
     'raw_view_tracker_script': template(
@@ -789,13 +791,12 @@ def settings(req):
     template("partial_settings_weights", subs={
       "follow": follow,
       "csrf": req.csrf(),
-      'raw_adjust_weight': template('partial_adjust_weight', subs={
-        'up_url': req.make_path(
-          "upvote?csrf=%s&follow_id=%s" % (req.csrf(), follow)),
-        'down_url': req.make_path(
-          "downvote?csrf=%s&follow_id=%s" % (req.csrf(), follow)),
-        'weight': int(weight)}),
-      })
+      'up_url': req.make_path(
+        "upvote?csrf=%s&follow_id=%s" % (req.csrf(), follow)),
+      'down_url': req.make_path(
+        "downvote?csrf=%s&follow_id=%s" % (req.csrf(), follow)),
+      'weight': int(weight)
+    })
     for (follow, weight) in cur.fetchall()]
 
   subs = {

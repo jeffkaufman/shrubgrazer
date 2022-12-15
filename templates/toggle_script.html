@@ -5,7 +5,9 @@ function collapse_expand(e) {
   let el = e.target;
 
   while (!el.classList.contains('post')) {
-    if (el.tagName == "A") return;
+    if (el.tagName == "A" ||
+        el.tagName == "TEXTAREA" ||
+        el.tagName == "BUTTON") return;
     console.log("considering", el);
     el = el.parentElement;
   }

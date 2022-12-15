@@ -36,10 +36,9 @@ function load_more_content() {
           const post_parent = document.createElement("div");
           post_parent.innerHTML = rendered_entry;
           const post = post_parent.children[0];
-          const post_meta = post.children[0];
           window.entries.appendChild(post);
           // Elements need configuring as they come on screen.
-          configure_post(post_meta);
+          configure_post(post);
         }
 
         if (json.next_token) {
@@ -147,7 +146,46 @@ function favorite_click(e) {
       });
 }
 
-function configure_post(post_meta) {
+const short_user_acct = user_acct.replace(/(@[^@]*).*/, '$$1');
+
+function reply_click(e) {
+  e.preventDefault();
+  const post = e.target.closest(".post");
+  const reply_box = post.querySelector(".reply-box");
+  reply_box.classList.toggle("hidden");
+  const reply_text = post.querySelector(".reply-text");
+  
+  if (!reply_text.value) {
+    authors = [];
+    let t = post;
+    while (t) {
+      let author_acct = "@" + t.getAttribute("author_acct");
+      if (!authors.includes(author_acct) &&
+          author_acct != user_acct &&
+          author_acct != short_user_acct) {
+        authors.push(author_acct);
+      }
+      t = t.parentElement.closest(".post");
+    }
+    if (authors.length) {
+      reply_text.value = authors.join(" ") + " ";
+    }
+  }
+
+  update_char_count(reply_text);
+}
+
+function update_char_count(reply_text) {
+  reply_text.parentElement.querySelector(
+    ".reply-chars").innerText = reply_text.value.length + "/500";
+}
+
+function reply_text_type(e) {
+  update_char_count(e.target);
+}
+
+function configure_post(post) {
+  const post_meta = post.children[0];
   start_tracking(post_meta);
 
   for (vote of post_meta.querySelectorAll(".vote")) {
@@ -156,6 +194,14 @@ function configure_post(post_meta) {
 
   for (favorite of post_meta.querySelectorAll(".favorite")) {
     favorite.onclick = favorite_click;
+  }
+
+  for (reply_icon of post_meta.querySelectorAll(".reply")) {
+    reply_icon.onclick = reply_click;
+  }
+
+  for (reply_text of post.querySelectorAll(".reply-text")) {
+    reply_text.oninput = reply_text_type;
   }
 }
 
@@ -166,7 +212,7 @@ const observer = new IntersectionObserver(handle_intersect, {
 });
 
 // Configure the initial elements.
-for (let element of document.getElementsByClassName("post_meta")) {
+for (let element of document.getElementsByClassName("post")) {
   configure_post(element);
 }
 

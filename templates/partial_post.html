@@ -1,28 +1,32 @@
-<div class="post parity-$parity flavor-$flavor">
-  <div class="post_meta" post_id="$post_id">
-    <table>
+<div class="post parity-$parity flavor-$flavor" author_acct="$acct">
+  <table class="post_meta" post_id="$post_id">
     <tr><td>
       <span class=display_name>$display_name</span>
-      <span class=display_acct>$acct</span>
-    </td>
-    <td align=right>
+      <span class=acct>$display_acct</span>
       <span>
         <a href="$view_url" class=ts>$raw_ts</a>
         <a href="$external_url" class=external_url>&#x2197;</a>
       </span>
-      <br>
-      <span class=loggedin>
-        <a href="#" data-url="$favorite_url" class=favorite>$raw_favorite_star</a>
-      </span>
-      <span class=loggedin>
-        $raw_adjust_weight
-      </span>
     </td>
-    </table>
-  </div>
+    <td align=right>
+      <table class="loggedin post-buttons" cellpadding=2>
+        <tr><td><a href="#" class=reply>&#8624;</a>
+            <td>
+            <td><a href="#" data-url="$favorite_url" class=favorite>$raw_favorite_star</a>
+        $raw_adjust_weight
+      </table>
+    </td>
+  </table>
   <div class=post_body>
     $raw_body
     $raw_attachments
+    <div class="reply-box hidden">
+      <textarea class=reply-text></textarea>
+      <table>
+        <tr><td><button class=submit-reply>post</button>
+            <td><div class=reply-chars>0/500</div>
+      </table>          
+    </div>
     $raw_children
   </div>
 </div>
