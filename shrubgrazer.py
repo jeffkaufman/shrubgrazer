@@ -77,19 +77,27 @@ def epoch(timestring):
     .astimezone(dateutil.tz.tzlocal())
     .timetuple()))
 
-def fetch(domain, path, access_token=None, raw=False, post=False):
-  headers = {}
+class FetchError(Exception):
+  def __init__(self, response, url):
+    self.response = response
+    self.url = url
+    self.message = "Status %s for %s" % (response.status_code, url)
+    super().__init__(self.message)
+
+def fetch(domain, path, access_token=None,
+          raw=False, post=False, data=None, headers={}):
+
   if access_token:
     headers["Authorization"] = "Bearer %s" % access_token
 
   url = "https://%s/%s" % (domain, path)
   if post:
-    response = requests.post(url, headers=headers)
+    response = requests.post(url, headers=headers, data=data)
   else:
     response = requests.get(url, headers=headers)
 
   if response.status_code != 200:
-    raise Exception("Status %s for %s" % (response.status_code, url))
+    raise FetchError(response, url)
 
   if raw:
     return response
@@ -336,8 +344,8 @@ class Entry:
       None: '',
     }[self.favourited]
 
-    subs['reply_url'] = req.make_path("reply?parent_id=%s&csrf=%s" % (
-      self.post_id, req.csrf()))
+    subs['reply_url'] = req.make_path("reply?parent_id=%s&depth=%s&csrf=%s" % (
+      self.post_id, depth+1, req.csrf()))
 
     return template("partial_post", subs)
 
@@ -514,10 +522,13 @@ def render_weighted_posts(req, weighted_posts):
   already = set()
   for post_id, weight in weighted_posts:
     if post_id in already: continue
-    body = fetch(req.domain(), "api/v1/statuses/%s" % post_id,
-                 req.access_token())
-    if body.get('error', None) == 'Record not found':
-      raise Exception(post_ids)
+    try:
+      body = fetch(req.domain(), "api/v1/statuses/%s" % post_id,
+                   req.access_token())
+    except FetchError as e:
+      if e.response.status_code == 404:
+        continue
+      raise
 
     entries.append(Entry(body))
     already.add(post_id)
@@ -749,8 +760,30 @@ def favorite_json(req):
 def reply_json(req):
   validate_csrf(req)
 
+  message = req.query("message").strip()
+  if not message:
+    return Response(json.dumps({
+      "error": "empty post",
+    }), content_type="application/json")
+
+  parent_id = req.query("parent_id")
+  depth = int(req.query("depth"))
+
+  response = fetch(
+    req.domain(),
+    "api/v1/statuses",
+    req.access_token(),
+    post=True,
+    headers={
+      "Idempotency-Key": str(hash(req.acct() + message + parent_id))
+    },
+    data={
+      "status": message,
+      "in_reply_to_id": parent_id,
+      "visibility": "unlisted",
+    })
   return Response(json.dumps({
-    "error": "post was rejected",
+    "raw_post": Entry(response).render(req, depth),
   }), content_type="application/json")
 
 def vote_json(req, delta):

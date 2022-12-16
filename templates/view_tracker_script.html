@@ -13,6 +13,15 @@ function send_view_ping(post_id) {
   fetch("$view_ping_url?csrf=$csrf&post_id=" + post_id);
 }
 
+function rendered_entry_to_post(rendered_entry) {
+  const post_parent = document.createElement("div");
+  post_parent.innerHTML = rendered_entry;
+  const post = post_parent.children[0];
+  // Elements need configuring as they come on screen.
+  configure_post(post);
+  return post;
+}
+
 function load_more_content() {
   if (next_token == "END" ||
       !window.loading.classList.contains("hidden") ||
@@ -33,12 +42,7 @@ function load_more_content() {
     function(response) { return response.json() }).then(
       function(json) {
         for (rendered_entry of json.rendered_entries) {
-          const post_parent = document.createElement("div");
-          post_parent.innerHTML = rendered_entry;
-          const post = post_parent.children[0];
-          window.entries.appendChild(post);
-          // Elements need configuring as they come on screen.
-          configure_post(post);
+          window.entries.appendChild(rendered_entry_to_post(rendered_entry));
         }
 
         if (json.next_token) {
@@ -187,6 +191,17 @@ function reply_submit_click(e) {
             function(json) {
               if (json.error) {
                 post.querySelector(".reply-error").innerText = json.error;
+              } else if (json.raw_post) {
+                const reply_box = post.querySelector(".reply-box");
+
+                reply_box.parentElement.insertBefore(
+                  rendered_entry_to_post(json.raw_post),
+                  reply_box.nextSibling);
+
+                reply_text.value = "";
+                post.querySelector(".reply-error").innerText = "";
+                update_char_count(reply_text);
+                post.querySelector(".reply-box").classList.add("hidden");
               }
               reply_text.disabled = false;
             });

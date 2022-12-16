@@ -15,6 +15,7 @@ Current status:
   * Not really: at some point it tells you you're done
   * But it does load more entries dynamically as you scroll down
 * Prioritized feed
+* Replies
 
 Algorithmic feed implementation:
 * Context: https://www.jefftk.com/p/user-controlled-algorithmic-feeds
@@ -35,6 +36,7 @@ Algorithmic feed implementation:
 Next steps:
 * Fix bug where somehow I started getting 404 for everything until I restarted
 * When viewing a given post's tree, unviewed items should be marked
+* Put notifications in feed
 
 ## Installation
 
