@@ -1,44 +1,25 @@
 # shrubgrazer
 
-Alternative Mastodon UI.  Very much in progress.
+Alternative Mastodon UI, with algorithmic feed and tree-style discussions.
 
-Intended as a prototype and demonstration, not something I expect lots
-of people will use.
+Primarily written as a prototype and demonstration.
 
-Current status:
-* Displays feed: https://www.jefftk.com/shrubgrazer/
-* Displays posts: https://www.jefftk.com/shrubgrazer/post/[id]
-  * Tree-style display of posts
-* Displays history: https://www.jefftk.com/shrubgrazer/history
-* Tracks which posts you've seen
-* "Infinite" scroll
-  * Not really: at some point it tells you you're done
-  * But it does load more entries dynamically as you scroll down
-* Prioritized feed
-* Replies
-
-Algorithmic feed implementation:
-* Context: https://www.jefftk.com/p/user-controlled-algorithmic-feeds
-* Track which entries have been on screen for at least a second
-  * "Unviewed" entries are ones that haven't been
-* Per-person priority scores
-  * Can click on posts to up/down priority, plus there's a control panel
-* Feed is a prioritized list of unviewed entries:
-  * Default prioritization:
-    * First sort by user priority
-    * Then group by thread
-      * This prevents seeing posts in 3/3, 2/3, 1/3 order
-    * Then show chronologically
-    * For later: give some context for posts
-  * Try to make this pluggable, since this is a big place I expect
-    preferences to differ.
-
-Next steps:
-* Fix bug where somehow I started getting 404 for everything until I restarted
-* When viewing a given post's tree, unviewed items should be marked
-* Put notifications in feed
+See https://www.jefftk.com/p/introducing-shrubgrazer for more details
+and screenshots.
 
 ## Installation
+
+Create a file `users.json` next to `shrubgrazer.py` with the accounts
+of the users you want to support.  Ex:
+
+    $ cat users.json
+    ["@jefftk@mastodon.mit.edu"]
+
+This is a python WSGI app, with [no
+dependencies](https://www.jefftk.com/p/designing-low-upkeep-software)
+outside of the python standard library and whatever you decide to use
+to serve it.  If you want to use Nginx with uWSGI, install them both
+and then use a configuration like:
 
 ```
 nginx.conf:
@@ -53,7 +34,7 @@ nginx.conf:
   Description=uWSGI shrubgrazer
 
   [Service]
-  ExecStart=/usr/bin/uwsgi_python3 --socket :7096 --wsgi-file /home/jefftk/code/shrubgrazer/shrubgrazer.py
+  ExecStart=/usr/bin/uwsgi_python3 --socket :7096 --wsgi-file /path/to/shrubgrazer.py
   Restart=always
   KillSignal=SIGQUIT
   Type=notify
@@ -65,3 +46,4 @@ nginx.conf:
 $ sudo systemctl enable uwsgi-shrubgrazer
 $ sudo systemctl daemon-reload
 ```
+
