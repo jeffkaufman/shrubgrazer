@@ -24,9 +24,10 @@
     <div class="reply-box hidden">
       <textarea class=reply-text></textarea>
       <table>
-        <tr><td><button class=submit-reply>post</button>
+        <tr><td><button data-url="$reply_url" class=submit-reply>post</button>
             <td><div class=reply-chars>0/500</div>
-      </table>          
+            <td><span class=reply-error></div>
+      </table>
     </div>
     $raw_children
   </div>

@@ -336,6 +336,9 @@ class Entry:
       None: '',
     }[self.favourited]
 
+    subs['reply_url'] = req.make_path("reply?parent_id=%s&csrf=%s" % (
+      self.post_id, req.csrf()))
+
     return template("partial_post", subs)
 
 
@@ -743,6 +746,13 @@ def favorite_json(req):
     "star": "\u2605" if response['favourited'] else "\u2606"
   }), content_type="application/json")
 
+def reply_json(req):
+  validate_csrf(req)
+
+  return Response(json.dumps({
+    "error": "post was rejected",
+  }), content_type="application/json")
+
 def vote_json(req, delta):
   validate_csrf(req)
   cur, con = req.db()
@@ -824,6 +834,7 @@ ROUTES = {
   "upvote": upvote_json,
   "downvote": downvote_json,
   "favorite": favorite_json,
+  "reply": reply_json,
   "settings": settings,
 }
 

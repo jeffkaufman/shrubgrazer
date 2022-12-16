@@ -175,6 +175,23 @@ function reply_click(e) {
   update_char_count(reply_text);
 }
 
+function reply_submit_click(e) {
+  e.preventDefault();
+  const post = e.target.closest(".post");
+  const reply_text = post.querySelector(".reply-text");
+  reply_text.disabled = true;
+
+  fetch(e.target.dataset.url +
+        "&message=" + encodeURIComponent(reply_text.value)).then(
+          function(response) { return response.json() }).then(
+            function(json) {
+              if (json.error) {
+                post.querySelector(".reply-error").innerText = json.error;
+              }
+              reply_text.disabled = false;
+            });
+}
+
 function update_char_count(reply_text) {
   reply_text.parentElement.querySelector(
     ".reply-chars").innerText = reply_text.value.length + "/500";
@@ -192,17 +209,10 @@ function configure_post(post) {
     vote.onclick = vote_click;
   }
 
-  for (favorite of post_meta.querySelectorAll(".favorite")) {
-    favorite.onclick = favorite_click;
-  }
-
-  for (reply_icon of post_meta.querySelectorAll(".reply")) {
-    reply_icon.onclick = reply_click;
-  }
-
-  for (reply_text of post.querySelectorAll(".reply-text")) {
-    reply_text.oninput = reply_text_type;
-  }
+  post_meta.querySelector(".favorite").onclick = favorite_click;
+  post_meta.querySelector(".reply").onclick = reply_click;
+  post.querySelector(".reply-text").oninput = reply_text_type;
+  post.querySelector(".submit-reply").onclick = reply_submit_click;
 }
 
 const observer = new IntersectionObserver(handle_intersect, {
