@@ -426,7 +426,6 @@ def post(post_id, req):
     'raw_ancestors': rendered_ancestors,
     'raw_post': root.render(req),
     'acct': req.acct() if req.logged_in() else '',
-    'raw_toggle_script': template('toggle_script'),
     'raw_view_tracker_script': template(
       'view_tracker_script',
       raw_vote_script=template('vote_script'),

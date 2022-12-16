@@ -158,7 +158,7 @@ function reply_click(e) {
   const reply_box = post.querySelector(".reply-box");
   reply_box.classList.toggle("hidden");
   const reply_text = post.querySelector(".reply-text");
-  
+
   if (!reply_text.value) {
     authors = [];
     let t = post;
@@ -216,6 +216,19 @@ function reply_text_type(e) {
   update_char_count(e.target);
 }
 
+function maybe_navigate(e) {
+  e.stopPropagation();
+  let el = e.target;
+  while (!el.classList.contains('post')) {
+    if (el.tagName == "A" ||
+        el.tagName == "TEXTAREA" ||
+        el.tagName == "BUTTON") return;
+    console.log("considering", el);
+    el = el.parentElement;
+  }
+  window.location.href = el.dataset.url;
+}
+
 function configure_post(post) {
   const post_meta = post.children[0];
   start_tracking(post_meta);
@@ -228,6 +241,7 @@ function configure_post(post) {
   post_meta.querySelector(".reply").onclick = reply_click;
   post.querySelector(".reply-text").oninput = reply_text_type;
   post.querySelector(".submit-reply").onclick = reply_submit_click;
+  post.onclick = maybe_navigate;
 }
 
 const observer = new IntersectionObserver(handle_intersect, {
