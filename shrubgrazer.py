@@ -72,10 +72,7 @@ def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
 def epoch(timestring):
-  return int(time.mktime(
-    dateutil.parser.parse(timestring)
-    .astimezone(dateutil.tz.tzlocal())
-    .timetuple()))
+  return int(dateutil.parser.parse(timestring).timestamp())
 
 class FetchError(Exception):
   def __init__(self, response, url):
