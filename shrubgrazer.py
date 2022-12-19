@@ -145,11 +145,11 @@ def user_allowed(acct):
 class Response:
   def __init__(self,
                output="",
-               headers=[],
+               headers=None,
                content_type=None,
                status="200 OK"):
     self.output = output
-    self.headers = headers
+    self.headers = headers or []
     self.status = status
 
     if content_type:
