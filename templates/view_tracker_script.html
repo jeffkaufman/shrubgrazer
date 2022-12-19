@@ -1,10 +1,16 @@
 $raw_vote_script
 <script>
-// The goal is to send a beacon back when a post has had its header
-// (".post_meta") fully on screen for at least the minimum time.  This
-// is so we don't show the same posts over and over.
+// The goal is to send a beacon back when a post has had both its top
+// and bottom fully on screen for at least the minimum time.  This is
+// so we don't show the same posts over and over.
 
-onscreen = new Set();
+onscreen_top = new Set();
+onscreen_bottom = new Set();
+on_page_unviewed = new Set();
+
+// Tracks posts where we've seen the top but not the bottom, or the opposite.
+viewed_top = new Set();
+viewed_bottom = new Set();
 
 // When an element comes on screen we set a timer.  If by the time the
 // timer fires the element is still on screen we mark it as viewed.
@@ -99,22 +105,30 @@ function handle_intersect(entries, observer) {
       continue;
     }
 
+    const post_id = entry.target.getAttribute("post_id");
+    const is_bottom = entry.target.classList.contains("post_bottom_placeholder");
+    const onscreen = is_bottom ? onscreen_bottom : onscreen_top;
+
     if (entry.intersectionRatio > 0.99) {
-      onscreen.add(entry.target.getAttribute("post_id"))
+      onscreen.add(post_id);
       start_observation_timer(entry.target);
-    }
-    if (entry.intersectionRatio < 0.01) {
-      onscreen.delete(entry.target.getAttribute("post_id"))
+    } else if (entry.intersectionRatio < 0.01) {
+      onscreen.delete(post_id);
     }
   }
 }
 
-on_page_unviewed = new Set();
-
 function start_tracking(element) {
   if (!$should_track_views) return;
-  observer.observe(element);
-  on_page_unviewed.add(element.getAttribute("post_id"));
+
+  const post_meta = element.children[0];
+  const post_bottom_placeholder = element.querySelector(
+    ".post_bottom_placeholder");
+
+  observer.observe(post_meta);
+  observer.observe(post_bottom_placeholder);
+
+  on_page_unviewed.add(post_meta.getAttribute("post_id"));
 }
 
 function stop_tracking(element) {
@@ -123,11 +137,27 @@ function stop_tracking(element) {
   on_page_unviewed.delete(element.getAttribute("post_id"));
 }
 
+
 function start_observation_timer(target) {
   window.setTimeout(function() {
-    if (onscreen.has(target.getAttribute("post_id"))) {
-      stop_tracking(target);
-      send_view_ping(target.getAttribute("post_id"));
+    const post_id = target.getAttribute("post_id");
+    const is_bottom = target.classList.contains("post_bottom_placeholder");
+    const onscreen = is_bottom ? onscreen_bottom : onscreen_top;
+
+    if (!onscreen.has(post_id)) return;
+
+    stop_tracking(target);
+    if (is_bottom) {
+      viewed_bottom.add(post_id);
+    } else {
+      viewed_top.add(post_id);
+    }
+
+    if (viewed_top.has(post_id) && viewed_bottom.has(post_id)) {
+      send_view_ping(post_id);
+      on_page_unviewed.delete(post_id);
+      viewed_top.delete(post_id);
+      viewed_bottom.delete(post_id);
     }
   }, 500);
 }
@@ -231,7 +261,7 @@ function maybe_navigate(e) {
 
 function configure_post(post) {
   const post_meta = post.children[0];
-  start_tracking(post_meta);
+  start_tracking(post);
 
   for (vote of post_meta.querySelectorAll(".vote")) {
     vote.onclick = vote_click;
@@ -246,7 +276,6 @@ function configure_post(post) {
 
 const observer = new IntersectionObserver(handle_intersect, {
   root: null,
-  rootMargin: "-50px 50px -50px 50px",
   threshold: [0, 1],
 });
 
