@@ -868,7 +868,7 @@ ROUTES = {
   "settings": settings,
 }
 
-def start(environ, start_response):
+def start(environ):
   req = Request(environ)
 
   if re.match(".*/post/[0-9]*$", req.path):
@@ -900,7 +900,7 @@ def die500(start_response, e):
 
 def application(environ, start_response):
   try:
-    response = start(environ, start_response)
+    response = start(environ)
     output = response.output
     headers = response.headers
     headers.append(('content-type', response.content_type))
