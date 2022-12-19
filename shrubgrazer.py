@@ -72,8 +72,15 @@ def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
 def epoch(timestring):
-  return int(datetime.datetime.strptime(
-    timestring, "%Y-%m-%dT%H:%M:%S.%f%z").timestamp())
+  if timestring.endswith("Z"):
+    # This is needed until we're on 3.11, because fromisoformat
+    # doesn't handle Z yet.
+    parsed = datetime.datetime.strptime(
+      timestring, "%Y-%m-%dT%H:%M:%S.%f%z")
+  else:
+    parsed = datetime.datetime.fromisoformat(timestring)
+
+  return int(parsed.timestamp())
 
 class FetchError(Exception):
   def __init__(self, response, url):
