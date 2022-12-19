@@ -18,10 +18,8 @@ of the users you want to support.  Ex:
 This is a python WSGI app, with [no
 dependencies](https://www.jefftk.com/p/designing-low-upkeep-software)
 outside of the python standard library and whatever you decide to use
-to serve it. [EDIT: actually it does depend on dateutil, which I
-forgot wasn't in the standard library; working on removing it.] If you
-want to use Nginx with uWSGI, install them both and then use a
-configuration like:
+to serve it. If you want to use Nginx with uWSGI, install them both
+and then use a configuration like:
 
 ```
 nginx.conf:

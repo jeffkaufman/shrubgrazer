@@ -9,11 +9,11 @@ import string
 import urllib
 import sqlite3
 import secrets
+import datetime
 import requests
 import traceback
 import subprocess
 import http.cookies
-import dateutil.parser
 
 SCRIPT_DIR = os.path.dirname(__file__)
 
@@ -72,10 +72,8 @@ def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
 def epoch(timestring):
-  return int(time.mktime(
-    dateutil.parser.parse(timestring)
-    .astimezone(dateutil.tz.tzlocal())
-    .timetuple()))
+  return int(datetime.datetime.strptime(
+    timestring, "%Y-%m-%dT%H:%M:%S.%f%z").timestamp())
 
 class FetchError(Exception):
   def __init__(self, response, url):
