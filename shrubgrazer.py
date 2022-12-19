@@ -2,6 +2,7 @@
 
 import os
 import re
+import sys
 import json
 import html
 import time
@@ -72,15 +73,10 @@ def hide_elements(*selectors):
   return "<style>%s{display:none}</style>" % ", ".join(selectors)
 
 def epoch(timestring):
-  if timestring.endswith("Z"):
-    # This is needed until we're on 3.11, because fromisoformat
-    # doesn't handle Z yet.
-    parsed = datetime.datetime.strptime(
-      timestring, "%Y-%m-%dT%H:%M:%S.%f%z")
-  else:
-    parsed = datetime.datetime.fromisoformat(timestring)
-
-  return int(parsed.timestamp())
+  if sys.version_info < (3, 11):
+    if timestring.endswith("Z"):
+      timestring = timestring[:-1] + "+00:00"
+  return int(datetime.datetime.fromisoformat(timestring).timestamp())
 
 class FetchError(Exception):
   def __init__(self, response, url):
