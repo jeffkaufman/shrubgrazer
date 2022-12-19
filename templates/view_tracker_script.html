@@ -75,7 +75,7 @@ function populate_feed(feed_population_state) {
   if (!"$populate_feed_url") return;
 
   fetch("$populate_feed_url?next=" +
-        encodeURIComponent(feed_population_state)).then(
+        encodeURIComponent(JSON.stringify(feed_population_state))).then(
     function(response) { return response.json() }).then(
       function(json) {
         if (json.feed_population_state) {

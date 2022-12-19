@@ -41,6 +41,18 @@ def initialize_db(cur):
               " ts integer not null,"
               " primary key (acct, post_id, ts))")
   cur.execute("create index idx_views on views (acct, post_id)")
+  cur.execute("create table notifications("
+              "  notification_id integer primary key not null,"
+              "  acct text not null,"
+              # favourite, mention, reblog, follow
+              #   Other types of notification exist but we currently
+              #   don't fetch or handle them.
+              "  type text not null,"
+              "  ts integer not null,"
+              "  notifier_name text not null,"
+              "  notifier_acct text not null,"
+              # null if type isn't in ['favourite', 'mention', 'reblog']
+              "  post_id text)")
 
 def hasall(d, *vals):
   for val in vals:
@@ -472,46 +484,82 @@ def more_history_json(req):
 def populate_feed_json(req):
   next_token = req.query('next')
   cur, con = req.db()
-
-  feed_population_state = None
-
-  if not next_token:
-    cur.execute("select max(post_id) from posts where acct = ?", (req.acct(), ))
-    response = cur.fetchone()
-    if response:
-      next_token = "&min_id=%s" % response
-    else:
-      next_token = ""  # never seen this user before
-
-  path = "api/v1/timelines/home?limit=40%s" % next_token
-  response = fetch(req.domain(), path, req.access_token(), raw=True)
   acct = req.acct()
 
-  for entry in response.json():
-    while hasall(entry, "reblog"):
-      entry = entry["reblog"]
+  next_token = json.loads(next_token)
+  if next_token:
+    fetch_type, offset_token = next_token
+  else:
+    fetch_type = "notification"
+    cur.execute("select max(notification_id)"
+                "  from notifications where acct = ?", (acct, ))
+    response, = cur.fetchone()
+    if response:
+      offset_token = "&min_id=%s" % response
+    else:
+      # never seen notifications for this user before
+      offset_token = ""
 
-    cur.execute("insert or ignore into posts "
-                "(post_id, created_at, acct, post_acct) "
-                "values (?, ?, ?, ?)",
+  if fetch_type == "notification" and offset_token == "end":
+    fetch_type = "post"
+    cur.execute("select max(post_id) from posts where acct = ?", (acct, ))
+    response, = cur.fetchone()
+    if response:
+      offset_token = "&min_id=%s" % response
+    else:
+      # never seen posts for this user before
+      offset_token = ""
+
+  if fetch_type == "notification":
+    path = "api/v1/notifications?limit=30%s" % offset_token
+    response = fetch(req.domain(), path, req.access_token(), raw=True)
+
+    for entry in response.json():
+      cur.execute("insert or ignore into notifications "
+                  "(notification_id, acct, type, ts, notifier_name,"
+                  " notifier_acct, post_id) "
+                  "values (?, ?, ?, ?, ?, ?, ?)",
                 (entry["id"],
-                 epoch(entry["created_at"]),
                  acct,
-                 entry["account"]["acct"]))
+                 entry["type"],
+                 epoch(entry["created_at"]),
+                 entry["account"]["display_name"],
+                 entry["account"]["acct"],
+                 entry["status"]["id"] if "status" in entry else None))
+  else:
+    path = "api/v1/timelines/home?limit=40%s" % offset_token
+    response = fetch(req.domain(), path, req.access_token(), raw=True)
+    for entry in response.json():
+      while hasall(entry, "reblog"):
+        entry = entry["reblog"]
+
+        cur.execute("insert or ignore into posts "
+                    "(post_id, created_at, acct, post_acct) "
+                    "values (?, ?, ?, ?)",
+                    (entry["id"],
+                     epoch(entry["created_at"]),
+                     acct,
+                     entry["account"]["acct"]))
   con.commit()
 
-  if "min_id" in next_token:
+  new_offset_token = None
+  if "min_id" in offset_token:
     prev_url = response.links.get('prev',{}).get('url','')
     if prev_url:
-      feed_population_state, = re.findall("(&min_id=[0-9]+)$", prev_url)
-  elif "max_id" in next_token:
+      new_offset_token, = re.findall("(&min_id=[0-9]+)$", prev_url)
+  elif "max_id" in offset_token or not offset_token:
     next_url = response.links.get('next',{}).get('url','')
     if next_url:
-      feed_population_state, = re.findall("(&max_id=[0-9]+)$", next_url)
+      new_offset_token, = re.findall("(&max_id=[0-9]+)$", next_url)
 
-  return Response(json.dumps({
-    "feed_population_state": feed_population_state,
-  }), content_type="application/json")
+  if not new_offset_token and fetch_type == "notification":
+    new_offset_token = "end"
+
+  response = {}
+  if new_offset_token:
+    response["feed_population_state"] = [fetch_type, new_offset_token]
+
+  return Response(json.dumps(response), content_type="application/json")
 
 def seen_id(cur, post_id):
   cur.execute("select post_id from posts where post_id = ?", (post_id, ))
