@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  backend:
+    image: mcranmer/backend
+    build:
+      context: .
+    volumes:
+      - ./public:/usr/share/app/public
+  
+  frontend:
+    image: nginx:1.13-alpine
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./public:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    ports:
+      - 80:80
