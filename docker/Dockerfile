@@ -23,7 +23,6 @@ COPY templates /usr/src/app/templates
 COPY users.json /usr/src/app/users.json
 
 CMD ["uwsgi", "--socket", ":7096", \
-              "--uid", "uwsgi", \
               "--plugins", "python3", \
               "--wsgi-file", "/usr/src/app/shrubgrazer.py", \
               "--protocol", "uwsgi" ]
