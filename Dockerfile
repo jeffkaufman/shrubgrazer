@@ -1,4 +1,4 @@
-FROM alpine:3.7
+FROM alpine:3.10
 
 EXPOSE 7096
 VOLUME /usr/src/app/public
