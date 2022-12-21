@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     volumes:
-      - ./templates:/usr/share/app/public
+      - ./public:/usr/share/app/public
   
   frontend:
     image: nginx:1.23-alpine
