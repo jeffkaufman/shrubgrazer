@@ -2,7 +2,7 @@ version: '3'
 
 services:
   backend:
-    image: mcranmer/backend
+    image: shrubgrazer
     build:
       context: .
     volumes:
