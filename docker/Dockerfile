@@ -15,6 +15,7 @@ RUN apk add --no-cache \
 COPY create-client.sh /usr/src/app/create-client.sh
 COPY get-user-token.sh /usr/src/app/get-user-token.sh
 COPY shrubgrazer.py /usr/src/app/shrubgrazer.py
+COPY templates /usr/src/app/templates
 
 # Configuration
 COPY users.json /usr/src/app/users.json
