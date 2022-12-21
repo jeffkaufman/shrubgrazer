@@ -9,7 +9,9 @@ RUN apk add --no-cache \
         nginx \
         uwsgi-python3 \
         python3 \
-        py3-requests
+        py3-requests \
+        bash \
+        curl
 
 # Library
 COPY create-client.sh /usr/src/app/create-client.sh
