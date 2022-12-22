@@ -10,7 +10,7 @@ services:
       - ./public:/usr/share/app/public
   
   frontend:
-    image: nginx:1.23-alpine
+    image: nginx:1.23
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
       - ./templates:/usr/share/nginx/html:ro
