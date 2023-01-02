@@ -47,3 +47,19 @@ $ sudo systemctl enable uwsgi-shrubgrazer
 $ sudo systemctl daemon-reload
 ```
 
+## Docker
+
+You can also run shrubgrazer in a docker container, which requires very minimal setup.
+To do this, again, create a `users.json` file as above. Then, run the following command:
+
+```bash
+docker-compose build
+```
+
+This will build a docker image containiner shrubgrazer. Then, run the following command:
+
+```bash
+docker-compose up
+```
+
+This will start the shrubgrazer container, and you can access it at `localhost:8080`.
