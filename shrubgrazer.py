@@ -250,11 +250,12 @@ class Request:
 
 
 class Card:
-  def __init__(self, card_json):
+  def __init__(self, card_json, suppress_images):
     self.json = card_json
+    self.suppress_images = suppress_images
 
   def render(self):
-    if hasall(self.json, 'image'):
+    if hasall(self.json, 'image') and not self.suppress_images:
       if 'description' not in self.json:
         self.json['description'] = ''
 
@@ -301,11 +302,12 @@ class Entry:
     self.attachments = []
     self.favourited = entry_json.get('favourited', None)
 
-    if hasall(entry_json, 'card'):
-      self.attachments.append(Card(entry_json['card']))
-
     for media_attachment in entry_json.get('media_attachments', []):
       self.attachments.append(Attachment(media_attachment))
+
+    if hasall(entry_json, 'card'):
+      self.attachments.append(Card(entry_json['card'],
+                                   suppress_images=bool(self.attachments)))
 
   def _load_weight(self, req):
     if self.weight == "":
@@ -410,6 +412,9 @@ def post(post_id, req):
   body = fetch(domain, "api/v1/statuses/%s" % post_id, req.access_token())
   context = fetch(domain, "api/v1/statuses/%s/context" % post_id,
                   req.access_token())
+
+  with open(os.path.join(SCRIPT_DIR, "post.json"), "w") as outf:
+    outf.write(json.dumps(body))
 
   rendered_ancestors = [
     Entry(ancestor).render(req)
