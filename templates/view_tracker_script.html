@@ -1,5 +1,21 @@
 $raw_vote_script
 <script>
+
+function showFetchErrors(response) {
+  if (!response.ok) {
+    document.getElementById("content").classList.add("error-border");
+    for (let el of document.querySelectorAll(".show-on-error")) {
+      el.style.display = "block";
+    }
+    response.text().then(function(text) {
+      document.getElementById("error-details").innerText = text;
+      show_hamburger_menu();
+    });
+    throw Error(response.statusText);
+  }
+  return response;
+}
+
 // The goal is to send a beacon back when a post has had both its top
 // and bottom fully on screen for at least the minimum time.  This is
 // so we don't show the same posts over and over.
@@ -16,7 +32,8 @@ viewed_bottom = new Set();
 // timer fires the element is still on screen we mark it as viewed.
 
 function send_view_ping(post_id) {
-  fetch("$view_ping_url?csrf=$csrf&post_id=" + post_id);
+  fetch("$view_ping_url?csrf=$csrf&post_id=" + post_id).then(
+    showFetchErrors);
 }
 
 function rendered_entry_to_post(rendered_entry) {
@@ -44,7 +61,7 @@ function load_more_content() {
   }
 
   fetch("$more_content_url?next=" + encodeURIComponent(
-    JSON.stringify(actual_next_token))).then(
+    JSON.stringify(actual_next_token))).then(showFetchErrors).then(
     function(response) { return response.json() }).then(
       function(json) {
         for (rendered_entry of json.rendered_entries) {
@@ -76,6 +93,7 @@ function populate_feed(feed_population_state) {
 
   fetch("$populate_feed_url?next=" +
         encodeURIComponent(JSON.stringify(feed_population_state))).then(
+          showFetchErrors).then(
     function(response) { return response.json() }).then(
       function(json) {
         if (json.feed_population_state) {
@@ -174,6 +192,7 @@ function favorite_click(e) {
   e.target.innerText = "";
   fetch(e.target.dataset.url +
         "&direction=" + encodeURIComponent(direction)).then(
+          showFetchErrors).then(
     function(response) { return response.json() }).then(
       function(json) {
         e.target.innerText = json.star;
@@ -217,6 +236,7 @@ function reply_submit_click(e) {
 
   fetch(e.target.dataset.url +
         "&message=" + encodeURIComponent(reply_text.value)).then(
+          showFetchErrors).then(
           function(response) { return response.json() }).then(
             function(json) {
               if (json.error) {

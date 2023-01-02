@@ -18,6 +18,13 @@
       <li class=loggedin><a href="${website}clear_history?csrf=$csrf">clear history</a>
       <li class=loggedin><a href="${website}logout?csrf=$csrf">log out</a>
     </ul>
+
+    <hr class=show-on-error>
+
+    <h1 class=show-on-error>Error</h1>
+
+    <pre id=error-details class=show-on-error>
+    </pre>
   </div>
 </div>
 <div id=hamburger-glass-pane class=hidden>
@@ -32,9 +39,15 @@ document.getElementById("hamburger-icon").onclick = function () {
   hamburger_pane.classList.toggle("hidden");
 };
 
-function hide_hamburger_menu(e) {
+function hide_hamburger_menu() {
   hamburger_menu.classList.add("hidden");
   hamburger_pane.classList.add("hidden");
+}
+
+function show_hamburger_menu() {
+  hamburger_menu.classList.remove("hidden");
+  hamburger_pane.classList.remove("hidden");
+  window.scrollTo(0, 0);
 }
 
 document.getElementById("hamburger-menu-hide").onclick = hide_hamburger_menu;
