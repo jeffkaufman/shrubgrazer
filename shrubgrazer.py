@@ -34,7 +34,8 @@ def initialize_db(cur):
               " post_id integer primary key not null,"
               " created_at integer not null,"
               " acct text not null,"
-              " post_acct text not null)")
+              " post_acct text not null,"
+              " is_reblog integer not null)")
   cur.execute("create table views("
               " acct text not null,"
               " post_id integer not null,"
@@ -535,16 +536,20 @@ def populate_feed_json(req):
     path = "api/v1/timelines/home?limit=40%s" % offset_token
     response = fetch(req.domain(), path, req.access_token(), raw=True)
     for entry in response.json():
+      is_reblog = False
+
       while hasall(entry, "reblog"):
         entry = entry["reblog"]
+        is_reblog = True
 
       cur.execute("insert or ignore into posts "
-                  "(post_id, created_at, acct, post_acct) "
-                  "values (?, ?, ?, ?)",
+                  "(post_id, created_at, acct, post_acct, is_reblog) "
+                  "values (?, ?, ?, ?, ?)",
                   (entry["id"],
                    epoch(entry["created_at"]),
                    acct,
-                   entry["account"]["acct"]))
+                   entry["account"]["acct"],
+                   is_reblog))
   con.commit()
 
   new_offset_token = None
@@ -608,7 +613,10 @@ def prepare_feed(req, ignore_post_ids=set()):
               " where p.acct = ?"
               "   and v.post_id is null" # exclude viewed posts
               "   and p.post_id not in (%s)"
-              " order by ifnull(aw.weight, 1) desc, p.created_at desc"
+              " order by ifnull(aw.weight, 1) desc,"
+              "          not p.is_reblog,"
+              "          p.created_at"
+              "       desc"
               " limit 10" % safe_ignore_post_ids, (req.acct(), ))
   weighted_posts = []
   response = cur.fetchall()
