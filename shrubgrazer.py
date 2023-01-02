@@ -533,13 +533,13 @@ def populate_feed_json(req):
       while hasall(entry, "reblog"):
         entry = entry["reblog"]
 
-        cur.execute("insert or ignore into posts "
-                    "(post_id, created_at, acct, post_acct) "
-                    "values (?, ?, ?, ?)",
-                    (entry["id"],
-                     epoch(entry["created_at"]),
-                     acct,
-                     entry["account"]["acct"]))
+      cur.execute("insert or ignore into posts "
+                  "(post_id, created_at, acct, post_acct) "
+                  "values (?, ?, ?, ?)",
+                  (entry["id"],
+                   epoch(entry["created_at"]),
+                   acct,
+                   entry["account"]["acct"]))
   con.commit()
 
   new_offset_token = None
