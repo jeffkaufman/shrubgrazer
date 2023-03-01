@@ -613,8 +613,8 @@ def prepare_feed(req, ignore_post_ids=set()):
               " where p.acct = ?"
               "   and v.post_id is null" # exclude viewed posts
               "   and p.post_id not in (%s)"
+              "   and not p.is_reblog"
               " order by ifnull(aw.weight, 1) desc,"
-              "          not p.is_reblog,"
               "          p.created_at"
               "       desc"
               " limit 10" % safe_ignore_post_ids, (req.acct(), ))
