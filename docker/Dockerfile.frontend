@@ -1,0 +1,7 @@
+FROM nginx:1.23
+
+ENV DEBIAN_FRONTEND noninteractive
+
+WORKDIR /etc/nginx/certs
+
+RUN openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes -keyout nginx-selfsigned.key -out nginx-selfsigned.crt -subj "/CN=localhost" 

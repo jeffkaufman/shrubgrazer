@@ -1,0 +1,26 @@
+version: '3'
+
+services:
+  backend:
+    image: shrubgrazer
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./public:/usr/share/app/public
+  
+  frontend:
+    image: shrubgrazer-frontend
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    volumes:
+      # - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./docker/certs:/etc/nginx/certs
+      - ./templates:/usr/share/nginx/html:ro
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      - backend
